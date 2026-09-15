@@ -5,8 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "smpl24"
 version = "0.0.0"
-description = "Convert motion capture (SMPL-family parameters, OpenSim skeletons, markers, BVH/FBX) into an SMPL-24 pose corpus"
+description = "Convert motion capture (SMPL-family parameters, OpenSim skeletons, joint centres, markers, BVH/FBX) into an SMPL-24 pose corpus"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hyunho Jeong" }]
 requires-python = ">=3.12"
 # Runtime dependencies of the engine that moves in from the parent project. The parent's own
 # pyproject pins lxml/pypdf/python-docx for unrelated work; none of that comes along.
@@ -14,11 +17,11 @@ dependencies = [
   "numpy>=1.26,<3",
   "scipy>=1.11,<2",
   "protobuf>=6.30,<8",   # .b3d containers (vendored SubjectOnDisk proto)
-  "pyyaml>=6,<7",        # correspondence tables, marker sets, settings files
+  "pyyaml>=6,<7",        # profiles, correspondence tables, marker sets, settings
+  "ezc3d>=1.5",          # .c3d marker files (owner decision 2026-09-15: a regular dependency)
 ]
 
 [project.optional-dependencies]
-c3d = ["ezc3d>=1.5"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
@@ -26,6 +29,9 @@ smpl24 = "smpl24.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"smpl24.formats._vendor.nimblephysics" = ["SubjectOnDisk.proto", "UPSTREAM.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

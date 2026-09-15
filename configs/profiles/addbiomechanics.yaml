@@ -1,0 +1,104 @@
+# AddBiomechanics as a profile: an OpenSim skeleton with joint angles per frame, stored in .b3d
+# containers, one subject per file, trials inside.
+#
+# Parity basis: scripts/poc/generate_addbio_smpl24.py and src/soma_synthetic_imu/addbio_retarget/
+# in the SOMA Synthetic IMU project (2026-09-15), run with the driver's defaults, which is how the
+# corpus addbio_smpl24_raw was generated (its SUMMARY.json: landmark_offsets none,
+# unknown_sex_model neutral, 53 trials skipped without a dynamics pass). Every value cites the
+# file and line it was lifted from.
+schema: smpl24_profile_v1
+id: addbiomechanics
+description: AddBiomechanics .b3d subjects (OpenSim Rajagopal-family skeletons, marker-driven IK)
+source_kind: skeleton_motion
+format: b3d
+
+layout:
+  # generate_addbio_smpl24.py:94-107 payload_files: <split>/<variant>/<study>/ directories,
+  # then every *.b3d below the study; the subject is the file's parent directory
+  # (e.g. train/With_Arm/Carter2023_Formatted_With_Arm/subject01/subject01.b3d).
+  subject: "{split}/{variant}/{study}/**/{subject}/*.b3d"
+  trial: within_container           # generate_addbio_smpl24.py:141 b3d.trials
+  skip_empty_files: true            # generate_addbio_smpl24.py:101-102: zero bytes = ADR-0030 non-payload
+
+bindings:
+  gender:
+    field: biological_sex           # b3d subject header (b3d_frames.py:55,207); driver :116-118
+    # shape_fit.py:114-129 normalise_biological_sex reads the first initial: m -> male, f ->
+    # female. The cohort writes female, male, f and unknown (shape_fit.py:14-15).
+    map: {female: female, f: female, male: male, m: male, unknown: neutral}
+    # Anything else takes the driver's --unknown-sex-model, "neutral" by default
+    # (generate_addbio_smpl24.py:262-267; shape_fit.py:18-23 on why that is a reading, not a guess).
+    default: neutral
+  stature_m: {field: height_m}      # generate_addbio_smpl24.py:162 b3d.subject.height_m or None
+  mass_kg: {field: mass_kg}         # generate_addbio_smpl24.py:163 b3d.subject.mass_kg (when the model has faces)
+  frames:
+    pass: dynamics                  # read_pass_frames defaults to trial.dynamics_pass_index (b3d_frames.py:249)
+    unfiltered_pass: kinematics     # generate_addbio_smpl24.py:178-181: the wrap repair reads the branch cuts here
+  root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]   # smpl_correspondence.py:80 _ROOT_TRANSLATION
+
+conventions:
+  up_axis: y                        # the models declare gravity (0, -9.80665, 0): world_frame.py:34-36
+  length_unit: m
+  angle_unit: rad                   # PassFrames.pos is radians (gaitex_frames.py:174-177 describes the convention)
+  # The frame is taken from the gravity each file's model declares, not assumed
+  # (b3d_frames.py:105-112; world_frame.py:9-13).
+  up_axis_check: model_gravity
+
+correspondence: ../correspondence/opensim_rajagopal.yaml   # generate_addbio_smpl24.py:130 correspondence_for(b3d.topology)
+
+shape:
+  method: bone_lengths              # generate_addbio_smpl24.py:158-165 fit_betas from measured_segment_lengths
+  # The driver's default is none (generate_addbio_smpl24.py:260-261,276-277) and the corpus was
+  # generated that way. ../offsets/addbiomechanics_landmarks_v1.yaml holds the table to opt in.
+  landmark_offsets: none
+  rescale_to_measured: false
+  # Shape is fitted once per subject on frames concatenated from the first
+  # settings.shape_fit.sample_trials eligible trials (generate_addbio_smpl24.py:139-157);
+  # not a per-trial median.
+  pool_per_subject: false
+  from_trials: all
+  use_stature: true                 # generate_addbio_smpl24.py:162
+  use_mass: true                    # generate_addbio_smpl24.py:163
+
+root:
+  placement: pelvis_centre          # pose_fit.py:523-532: trans = the root centre plus the fitted offset
+  alignment: child_offsets          # pose_fit.py:479-482 _root_alignment from every child offset
+  tracked: []                       # no per-frame root solve (pose_fit.py:534 root_placement is None)
+  recover_frozen: false
+
+pose:
+  method: segment_rotation_transfer # pose_fit.py:3-9  G_smpl[j] = R_world . G_source[body(j)] . A[j]
+  reference: none                   # generate_addbio_smpl24.py:199-206 passes no reference_rotations
+  place_unfitted_from_reference: false
+  lumbar_zero_from_reference: false # pose_fit.py:369 default; OpenSim frames coincide at zero coordinates
+
+provenance:
+  # Marker-driven IK over the whole body: a joint the model declares is a joint the solve had
+  # evidence for (provenance.py:3-6). Absent joints come from the correspondence intersection.
+  restrict_to_driven: none
+
+repairs:
+  wrap:
+    # Not keyed on a coordinate name: every column whose unfiltered pass carries a 2*pi
+    # staircase is rebuilt, the rest are left bit-identical (wrap_repair.py:11-24,165-181).
+    # The corpus run repaired pelvis_rotation (2,012), arm_rot_r (93) and arm_flex_r (37).
+    coordinates: any
+    # Filter constants are read from each trial's own lowPassFilter pass header rather than
+    # chosen (wrap_repair.py:26-29,105-122 filter_spec_for).
+    filter: declared_by_source
+    declared_pass: lowPassFilter
+    # A repaired trial's stored centres still hold the corrupted heading, so they are recomputed
+    # by forward kinematics from the repaired coordinates; an untouched trial keeps the source's
+    # own centres (generate_addbio_smpl24.py:189-198).
+    recompute_centres: true
+  resample: none                    # the driver keeps the source rate; --max-frames thins only (:256)
+  discontinuity: {settings_key: discontinuity, action: flag}   # pose_discontinuity_scan.py, applied to the INDEX (2026-08-31 wrap-repair spec 3.5)
+
+skip:
+  trials_without_pass: dynamics     # generate_addbio_smpl24.py:144-146 (53 trials in the cohort)
+  empty_trials: true                # generate_addbio_smpl24.py:142-143 trial.length == 0
+  subjects_with_unresolved_gender: false   # the default above resolves every value (:119-121 skips only with no fallback)
+
+settings:
+  - ../settings/default.yaml
+  - ../settings/addbiomechanics.yaml

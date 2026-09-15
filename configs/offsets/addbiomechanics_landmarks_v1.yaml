@@ -1,0 +1,35 @@
+# How far SMPL's idea of a bone sits from an OpenSim (Rajagopal-family) skeleton's, in metres,
+# as `smpl - measured`, per SMPL edge (parent -> child). A shape fit that opts in adds these to
+# the measured segment lengths before solving for betas, so that shape parameters are not spent
+# papering over a landmark disagreement (the two conventions do not put "the hip" or "the
+# shoulder" in the same place).
+#
+# Lifted verbatim from src/soma_synthetic_imu/addbio_retarget/shape_fit.py:91-105
+# (LANDMARK_OFFSETS_V1) in the SOMA Synthetic IMU project. Medians measured over 94 subjects
+# spanning every study and both variants of the AddBiomechanics cohort; per side on purpose,
+# since the released SMPL templates are themselves left-right asymmetric by up to 7 mm.
+# Held out one study at a time this cut pooled bone-length rms from 22.9 mm to 15.3 mm and
+# stature bias from +49 mm to +31 mm (shape_fit.py:84-88). Reproduce with
+# scripts/diagnostics/addbio_shape_fit_probe.py --per-study 3 --calibrate.
+#
+# The shipped AddBiomechanics profile does NOT apply this table (its corpus was generated with
+# the driver's default of none: generate_addbio_smpl24.py:260-261,276-277); it is here so a
+# profile can opt in by pointing shape.landmark_offsets at it.
+schema: smpl24_landmark_offsets_v1
+id: addbiomechanics_landmarks_v1
+unit: m
+sign: smpl_minus_measured
+offsets:
+  pelvis/left_hip: -0.0150          # (0, 1)
+  pelvis/right_hip: -0.0107         # (0, 2)
+  pelvis/spine1: -0.0081            # (0, 3)
+  left_hip/left_knee: -0.0312       # (1, 4)
+  right_hip/right_knee: -0.0318     # (2, 5)
+  left_knee/left_ankle: 0.0126      # (4, 7)
+  right_knee/right_ankle: 0.0079    # (5, 8)
+  left_ankle/left_foot: 0.0005      # (7, 10)
+  right_ankle/right_foot: 0.0045    # (8, 11)
+  left_shoulder/left_elbow: -0.0386 # (16, 18)
+  right_shoulder/right_elbow: -0.0378  # (17, 19)
+  left_elbow/left_wrist: 0.0120     # (18, 20)
+  right_elbow/right_wrist: 0.0183   # (19, 21)

@@ -40,7 +40,7 @@ python -m pip install -e ".[dev]"
 smpl24 --version
 ```
 
-Optional extras: `.[c3d]` for `.c3d` reading.
+`.c3d` reading uses `ezc3d`, installed as a regular dependency.
 
 ### 2. Prepare the body models (once per machine)
 
@@ -76,10 +76,16 @@ smpl24 convert --profile configs/profiles/gaitex.yaml --input /data/gaitex \
 smpl24 convert --profile configs/profiles/amass.yaml --input /data/amass \
     --models ~/smpl24-models --out corpus/amass
 
-# A project-private dataset: same command, a profile the project keeps in its own configs
-smpl24 convert --profile /project/configs/smpl24/prism.yaml --input /data/prism \
-    --models ~/smpl24-models --out corpus/prism
+# An internal dataset: its profile is not in this repository. Point SHARED_DATASET_PATH at the
+# shared drive where the project publishes internal profiles, then name the profile.
+export SHARED_DATASET_PATH=/mnt/shared/SOMA_AI_SharedData      # or set it in the environment once
+smpl24 convert --profile prism --input /data/prism --models ~/smpl24-models --out corpus/prism
 ```
+
+A profile name resolves in this order: an existing path as given; `configs/profiles/<name>.yaml`
+in this package; `$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`. Values inside a profile may
+use `${SHARED_DATASET_PATH}`, and relative paths resolve against the profile's own directory, so a
+profile published on the shared drive finds its correspondence and settings files beside it.
 
 Every converter writes the same corpus layout (see [Corpus format](#corpus-format)).
 
@@ -183,9 +189,14 @@ skip: {trials_without: dynamics}
 settings: ../settings/default.yaml
 ```
 
-The schema is documented field by field in `docs/profile-schema.md` (added with phase 2a). The
-loader refuses unknown keys, resolves relative paths against the profile, and hashes every
+The schema is documented field by field in [`docs/profile-schema.md`](docs/profile-schema.md).
+The loader refuses unknown keys, resolves relative paths against the profile, and hashes every
 referenced file into the corpus manifests.
+
+Public datasets' profiles ship here as examples. Internal datasets' profiles are authored in the
+consuming project and published to the shared drive under `smpl24/`, mirroring this package's
+`configs/` layout (`profiles/`, `correspondence/`, `markersets/`, `offsets/`, `settings/`); the
+`SHARED_DATASET_PATH` environment variable names that drive.
 
 ---
 
@@ -213,8 +224,8 @@ itself (joint table, rest pose, frames, forward kinematics): [`docs/primer.md`](
   contains them, and the extracted `.npz` files must not be committed or shared.
 - Motion data is never stored in this repository either. Converters read from paths you give
   them and write only to `--out`.
-- The code licence is an open decision recorded in `docs/plan.md`. Until it is taken, treat the
-  repository as INTERNAL-ONLY.
+- The code is under the MIT licence (`LICENSE`). The licence governs distribution once the owner
+  publishes the repository; until then it stays INTERNAL-ONLY, as the parent project requires.
 
 ## Development
 
@@ -231,5 +242,12 @@ greps `src/` for profile ids so that no dataset name can creep back into code.
 ## Relationship to the SOMA Synthetic IMU project
 
 This package was carved out of that project's retarget engine so that the conversion to SMPL-24
-has one home with its own history and releases. The project consumes it as a git submodule, pins
-a commit, and passes its profiles by path; the migration is staged in [`docs/plan.md`](docs/plan.md).
+has one home with its own history and releases. The project consumes it as a git submodule and
+pins a commit; it authors its internal profiles in its own `configs/smpl24/` and publishes them
+to the shared drive that `SHARED_DATASET_PATH` names. The migration is staged in
+[`docs/plan.md`](docs/plan.md).
+
+**What FBX is, and why it goes through Blender.** FBX is Autodesk's binary interchange format for
+3D scenes and skeletal animation, common in game and animation pipelines. Reading it needs the
+proprietary Autodesk SDK or a reimplementation; Blender (free) imports FBX and exports BVH, which
+this package reads natively. `smpl24 fbx2bvh` drives a Blender you already have installed.

@@ -152,15 +152,25 @@ rate). This is **trimming and frame matching**, not retargeting.
 
 ### 3.4 Frame (up-axis) change
 
-When the data frame differs from the model frame (Z-up data, Y-up model), multiply a fixed
-rotation `C` into **the root rotation and the translation only**:
+When the data frame differs from the model frame (Z-up data, Y-up model), apply a fixed rotation
+`C` to **the root rotation and the translation only**; the local rotations of joints 1–23 are
+unchanged.
 
 ```
-R_0' = C · R_0        t' = C · t        (local rotations of joints 1–23 unchanged)
+R_0' = C · R_0
+t'   = C · (j_0 + t) − j_0   =   C · t + (C − I) · j_0
 ```
 
-Rotate every other frame-bound quantity (the gravity vector, for one) the same way, and record
-which frame the output is stored in.
+The `(C − I)·j_0` term is easy to drop. The root rotation turns the body about the **pelvis**
+`j_0`, while `t` moves the **model origin** (section 2.3); with `t' = C·t` alone the whole body
+lands `(C − I)·j_0` away from where it should be. On a real SMPL skeleton the pelvis is off the
+origin, so a 90° up-axis change misplaces the body by tens of centimetres. `t' = C·t` is right
+only when the pelvis sits at the origin. Check: world joint positions from forward kinematics
+before and after the change must differ by the rigid rotation `C`.
+
+`j_0` comes from the subject's rest skeleton (`J(β)`), so apply the change after the gender model
+and `β` are fixed. Rotate every other frame-bound quantity (the gravity vector, for one) the same
+way, and record which frame the output is stored in.
 
 ### 3.5 Resampling in time
 
@@ -323,6 +333,7 @@ list, and the code revision.
 | Mistake | Symptom | Remedy |
 |---|---|---|
 | using `t` as the pelvis position | the whole skeleton is offset by the rest pelvis offset | `p_0 = j_0 + t` (section 2.3) |
+| changing the up axis with `t' = C·t` alone | the whole body is off by `(C − I)·j_0` | `t' = C·(j_0 + t) − j_0` (section 3.4) |
 | mixing gender models | same `β`, different bone lengths | record gender as a parameter; refit `β` when it changes |
 | component-wise axis-angle interpolation | rotations jump near π | quaternion slerp |
 | ignoring rest-pose differences | constant offsets remain on arms and legs | alignment matrices `A_k` from a calibration frame |

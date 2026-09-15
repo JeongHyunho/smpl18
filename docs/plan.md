@@ -289,16 +289,53 @@ parity: the same sample converted through the dataset's profile must reproduce t
 **Order inside 2b** (safest first): `model/` and `skeleton/` (pure, twice-implemented today) →
 `sources/skeleton/opensim_fk` → `fit/` → `repair/` → `corpus/` → `convert`.
 
+### 5.1 Progress (2026-09-15)
+
+| Phase | State | Evidence |
+|---|---|---|
+| 0 Seed | done | commits e3b3405, 40dfaa4 |
+| 1 Split and mount | waiting for the remote (owner deferred it) | — |
+| 2a Profile schema, profiles, formats | **done** | `profile/` (schema, loader with the `SHARED_DATASET_PATH` resolution, layout, parameter binding), `sources/base.py`, `smpl24 profile validate/show`; shipped profiles `addbiomechanics`, `gaitex`, `amass` and the project's internal `prism`, `hknu` (in the project's `configs/smpl24/`) all validate; `formats/` for osim, mot, trc, c3d (ezc3d), b3d (+ vendored proto, pin verified), bvh (new), npz, json, mat, and a whitelisting pickle reader |
+| 2b Engine move | **started**: `model/` (extract, load, select with no default path) and `skeleton/` (definition, rotations, kinematics, frames) are in; `sources/skeleton/opensim_fk`, `fit/`, `repair/`, `corpus/`, `convert` are next | `tests/parity/test_against_parent.py`: rest joints, segment lengths, gravity frame change, quaternion algebra and Kabsch are bit-identical to the parent; forward kinematics agrees to 1e-12 (batched `einsum` against the parent's per-frame `@`) |
+| 3–5 | not started | — |
+
+Test count at this point: 318 passing in the package, with the parity tests running against the
+parent checkout rather than skipping.
+
+### 5.2 Findings recorded during 2a/2b
+
+- **The frame change needs the rest pelvis.** Turning the up axis is `R_0' = C R_0` and
+  `t' = C (j_0 + t) − j_0`, not `t' = C t`: the root rotation turns the body about the pelvis
+  `j_0`, while `t` moves the model origin. With `t' = C t` a test skeleton landed 0.248 m off; the
+  exact form is at 4e-16. `skeleton.frames.FrameChange.apply_to_pose` takes `pelvis_rest`, and the
+  primer (this package's and the project's Korean guide) was corrected in section 3.4.
+- **The format readers stay uninterpreted.** Each reader returns the file's own names, frame and
+  units. What the parent did while reading and is really a dataset decision now sits in profiles
+  or in a kind: the `.b3d` Y-up to Z-up turn, "dynamics pass first", GAITEX's frozen-root recovery,
+  its millimetre conversion, and the exact-zero occlusion sentinel.
+- **Parent and package protobuf copies cannot share a process.** Importing the parent's vendored
+  `SubjectOnDisk_pb2` and the package's registers `SubjectOnDisk.proto` twice. Harmless inside the
+  package; it disappears when the parent deletes its copy in phase 3. The parity tests avoid it
+  because the parent modules they import do not load the proto.
+- **PRISM's Large pelvis is not `trans`.** The project's PRISM generator takes the pelvis trajectory
+  from `imu_gt.Pelvis.pos_world`, which differs from SMPL `trans` by the rest pelvis offset. The
+  `prism` profile binds `trans` as the usage policy prescribes; phase 3 parity for PRISM has to
+  compare against the generator's SMPL parameters, not against its Large pelvis.
+- **The schema grew where the drivers needed it**, and only declaratively: a subject table read from
+  a workbook, a gender cross-check field, root alignment from anatomical directions, pose reference
+  from a static trial, per-bone rescale lists. No expression language was added.
+
 ---
 
 ## 6. Integration with the SOMA project
 
 - **Mount point** `packages/smpl24/` (the seed lives there, so the path does not change when the
   submodule replaces it; the project's plan link keeps resolving).
-- **Profiles.** Public datasets' profiles ship in `smpl24/configs/profiles/` as examples; the
-  project may override any of them and keeps internal ones (PRISM, HKNU) in its own `configs/`,
-  passing paths explicitly. The project's registry (`source_pipelines_v1.yaml`) gains one field
-  per source: `smpl24_profile`.
+- **Profiles.** Public datasets' profiles ship in `smpl24/configs/profiles/` as examples. The
+  project authors internal ones (PRISM, HKNU) in its own `configs/smpl24/` and publishes them to
+  the shared drive with its push procedure; at run time `smpl24` resolves a profile name through
+  `SHARED_DATASET_PATH` (`$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`). The project's
+  registry (`source_pipelines_v1.yaml`) gains one field per source: `smpl24_profile`.
 - **Pinning and provenance.** The project records the submodule commit, the profile id and hash,
   and `Model.sha256` per selected model in every run record; §10.2's "model/checkpoint hash" is
   satisfied.
@@ -313,17 +350,17 @@ parity: the same sample converted through the dataset's profile must reproduce t
 
 ---
 
-## 7. Open decisions for the owner
+## 7. Decisions (owner, 2026-09-15)
 
-| Decision | Options | Default in this plan |
-|---|---|---|
-| Remote for the new repository | private GitHub repository; a bare repository on the shared drive | private GitHub |
-| Package and CLI name | `smpl24`; `smpl24-retarget`; `mocap2smpl24` | `smpl24` |
-| Code licence | MIT / BSD-3 / Apache-2.0 / none (INTERNAL-ONLY) | INTERNAL-ONLY until decided |
-| Where internal profiles live | in `smpl24/configs/profiles/` too; only in the project's `configs/` | project's `configs/` for PRISM and HKNU |
-| `.c3d` reading | `ezc3d` as an extra; own reader | `ezc3d` extra |
-| FBX route | Blender bridge (external); Autodesk FBX SDK; skip FBX in 0.1 | Blender bridge |
-| Mount path in the project | `packages/smpl24`; `external/smpl24` | `packages/smpl24` |
+| Decision | Outcome |
+|---|---|
+| Remote for the new repository | **deferred.** Phases 2a and 2b proceed in-tree at `packages/smpl24/`; phase 1 (split and mount) runs when the remote exists |
+| Package and CLI name | **`smpl24`** (proposed and adopted): the skeleton's name, short, one word for the distribution, the import and the command. Alternatives considered: `smpl24-retarget` (narrower than the parameter and marker paths), `mocap2smpl24` (longer, hyphen-free import impossible) |
+| Code licence | **MIT** (proposed and adopted; `LICENSE` added). Permissive, the most common choice for research tooling, no patent clause to negotiate. Apache-2.0 remains the alternative if the institution wants an explicit patent grant. The licence does not change the repository's INTERNAL-ONLY status; publication is a separate owner decision under the parent project's rules |
+| Where internal profiles live | authored in the parent project's `configs/smpl24/`, **published to the shared drive** and found at run time through the `SHARED_DATASET_PATH` environment variable: `$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`, with the package's `configs/` layout mirrored beside it. Public profiles ship in the package |
+| `.c3d` reading | **`ezc3d` as a regular dependency** |
+| FBX route | **Blender bridge** (`smpl24 fbx2bvh`, external Blender executable); native FBX reading is out of scope |
+| Mount path in the project | `packages/smpl24` |
 
 ---
 

@@ -5,6 +5,7 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+.omc/
 
 # Never commit body models or motion data (see README: Body models and licences)
 *.pkl

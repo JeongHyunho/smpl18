@@ -1,0 +1,67 @@
+# AMASS as a profile: SMPL-H parameters in npz files, one sequence per file, sub-datasets as
+# top-level directories.
+#
+# Parity basis: scripts/poc/generate_amass_faithful.py (load_amass_safe, build_pose24, the
+# resampling helpers) and generate_amass_faithful_all.py (enumeration) in the SOMA Synthetic
+# IMU project, 2026-09-15. Every value cites the file and line it came from.
+schema: smpl24_profile_v1
+id: amass
+description: AMASS SMPL-H sequences (*_poses.npz) under sub-dataset directories
+source_kind: smpl_parameters
+format: npz
+
+layout:
+  # generate_amass_faithful_all.py:46-55: every *.npz under <sub-dataset>/**, the subject being
+  # the file's parent directory and the sub-dataset the first directory ({study} here).
+  subject: "{study}/{subject}"
+  # Motion sequences are named <seq>_poses.npz; shape.npz carries gender and betas only and is
+  # excluded rather than silently dropped (generate_amass_faithful_all.py:59-61,125-128).
+  trial: "{study}/{subject}/{trial}_poses.npz"
+  exclude: ["shape.npz"]
+
+bindings:
+  # poses [N, 156] SMPL-H axis-angle -> [N, 52, 3]; the converter keeps the first 22 body
+  # joints and sets the two hands to identity (generate_amass_faithful.py:175,197-203).
+  poses: {field: poses, layout: "T,J*3"}
+  # 16 shape parameters; the clean model carries 10 and the converter truncates
+  # (generate_amass_faithful.py:177,534-535 smpl10_beta_truncation).
+  betas: {field: betas}
+  trans: {field: trans}             # generate_amass_faithful.py:176
+  fps:
+    field: mocap_framerate          # generate_amass_faithful.py:184-185
+    aliases: [mocap_frame_rate]     # generate_amass_faithful.py:186-187
+    # When the npz omits the rate, the sub-dataset's standard mocap rate stands in
+    # (generate_amass_faithful.py:71-74 DATASET_FPS_FALLBACK, :188-192).
+    fallback_key: study
+    fallback: {BMLmovi: 120.0, CMU: 120.0, Transitions: 120.0, KIT: 100.0, TotalCapture: 60.0}
+  gender:
+    field: gender                   # generate_amass_faithful.py:146-158 normalize_gender (str, bytes or 0-d array)
+    map: {male: male, m: male, female: female, f: female, neutral: neutral, n: neutral}
+    # A missing field means neutral (:183); an unrecognised value is an error (:158), so no
+    # default is given here.
+    when_absent: neutral
+
+conventions:
+  up_axis: z                        # empirically Z-up for every sub-dataset (generate_amass_faithful.py:17-19,59)
+  length_unit: m
+  angle_unit: rad
+
+shape:
+  method: parameters                # betas come from the source; no fit
+
+root:
+  placement: source_translation     # trans is the SMPL translation as stored
+
+repairs:
+  wrap: none
+  # Every sequence is brought to 100 Hz: per-joint Slerp on local rotations, linear
+  # interpolation on trans; a no-op at 100 Hz (generate_amass_faithful.py:58,209-249).
+  resample: {fps: 100, rotations: slerp, translation: linear}
+  discontinuity: {settings_key: discontinuity, action: flag}
+
+skip:
+  # Non-finite poses, trans or betas fail the sequence rather than being repaired
+  # (generate_amass_faithful.py:178-182; the Transitions archive has known non-finite frames).
+  trials_with_nonfinite_input: true
+
+settings: ../settings/default.yaml

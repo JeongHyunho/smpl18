@@ -294,7 +294,7 @@ parity: the same sample converted through the dataset's profile must reproduce t
 | Phase | State | Evidence |
 |---|---|---|
 | 0 Seed | done | commits e3b3405, 40dfaa4 |
-| 1 Split and mount | waiting for the remote (owner deferred it) | — |
+| 1 Split and mount | **half done**: the private remote `JeongHyunho/smpl24` exists and carries the package history on `main`. Still to do: replace the in-tree directory with `git submodule add`, put `packages/smpl24/src` on the project's test path, and teach CI `--recurse-submodules`. That swap waits until the lane using the in-tree package (pipeline integration) has landed, so the files do not move under a running session | `git subtree split --prefix=packages/smpl24` pushed to the remote's `main`; the repository holds 94 files, no data files, and is private |
 | 2a Profile schema, profiles, formats | **done** | `profile/` (schema, loader with the `SHARED_DATASET_PATH` resolution, layout, parameter binding), `sources/base.py`, `smpl24 profile validate/show`; shipped profiles `addbiomechanics`, `gaitex`, `amass` and the project's internal `prism`, `hknu` (in the project's `configs/smpl24/`) all validate; `formats/` for osim, mot, trc, c3d (ezc3d), b3d (+ vendored proto, pin verified), bvh (new), npz, json, mat, and a whitelisting pickle reader |
 | 2b Engine move | **started**: `model/` (extract, load, select with no default path) and `skeleton/` (definition, rotations, kinematics, frames) are in; `sources/skeleton/opensim_fk`, `fit/`, `repair/`, `corpus/`, `convert` are next | `tests/parity/test_against_parent.py`: rest joints, segment lengths, gravity frame change, quaternion algebra and Kabsch are bit-identical to the parent; forward kinematics agrees to 1e-12 (batched `einsum` against the parent's per-frame `@`) |
 | 3–5 | not started | — |
@@ -331,6 +331,15 @@ parent checkout rather than skipping.
 
 - **Mount point** `packages/smpl24/` (the seed lives there, so the path does not change when the
   submodule replaces it; the project's plan link keeps resolving).
+- **Until the swap**, the in-tree directory is the working copy and the remote is updated from it:
+
+  ```bash
+  git subtree split --prefix=packages/smpl24 -b smpl24-export
+  git push https://github.com/JeongHyunho/smpl24.git smpl24-export:main
+  ```
+
+  A commit made only in the remote would be lost by the next split, so all work continues in-tree
+  until the submodule replaces the directory.
 - **Profiles.** Public datasets' profiles ship in `smpl24/configs/profiles/` as examples. The
   project authors internal ones (PRISM, HKNU) in its own `configs/smpl24/` and publishes them to
   the shared drive with its push procedure; at run time `smpl24` resolves a profile name through
@@ -354,7 +363,7 @@ parent checkout rather than skipping.
 
 | Decision | Outcome |
 |---|---|
-| Remote for the new repository | **deferred.** Phases 2a and 2b proceed in-tree at `packages/smpl24/`; phase 1 (split and mount) runs when the remote exists |
+| Remote for the new repository | **private GitHub repository, created 2026-09-16: `JeongHyunho/smpl24`.** The package history was exported with `git subtree split --prefix=packages/smpl24` and pushed to its `main` (three commits, 94 files). The working copy is still the in-tree `packages/smpl24/`; the submodule swap is the rest of phase 1 |
 | Package and CLI name | **`smpl24`** (proposed and adopted): the skeleton's name, short, one word for the distribution, the import and the command. Alternatives considered: `smpl24-retarget` (narrower than the parameter and marker paths), `mocap2smpl24` (longer, hyphen-free import impossible) |
 | Code licence | **MIT** (proposed and adopted; `LICENSE` added). Permissive, the most common choice for research tooling, no patent clause to negotiate. Apache-2.0 remains the alternative if the institution wants an explicit patent grant. The licence does not change the repository's INTERNAL-ONLY status; publication is a separate owner decision under the parent project's rules |
 | Where internal profiles live | authored in the parent project's `configs/smpl24/`, **published to the shared drive** and found at run time through the `SHARED_DATASET_PATH` environment variable: `$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`, with the package's `configs/` layout mirrored beside it. Public profiles ship in the package |

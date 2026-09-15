@@ -34,7 +34,7 @@ and no motion data; see [Body models and licences](#body-models-and-licences).
 Python 3.12 or newer.
 
 ```bash
-git clone <url> smpl24
+git clone https://github.com/JeongHyunho/smpl24.git
 cd smpl24
 python -m pip install -e ".[dev]"
 smpl24 --version

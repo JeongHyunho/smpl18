@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Never commit body models or motion data (see README: Body models and licences)
+*.pkl
+*.npz
+models/
+corpus/

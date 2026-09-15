@@ -24,7 +24,8 @@ it is source-specific: the source is described, not assumed.
 |---|---|
 | `format_id`, `format_version` | `smpl24_corpus`, `1.0` |
 | `converter` | `{"package": "smpl24", "version": ..., "commit": ...}` |
-| `input_kind` | `smpl` / `opensim` / `b3d` / `markers` / `bvh` / `fbx` |
+| `profile` | `{"id": ..., "sha256": ..., "referenced_files": {relative path: sha256}}`, or `{"id": "adhoc", ...}` with the command-line bindings when no profile was used |
+| `source_kind`, `format` | `smpl_parameters` / `skeleton_motion` / `joint_centres` / `marker_trajectories`; `npz` / `pickle` / `json` / `osim_mot` / `b3d` / `trc` / `c3d` / `bvh` / `mat` |
 | `subjects`, `trials`, `frames` | counts |
 | `settings_sha256` | hash of the settings file used for the whole corpus |
 | `skipped` | list of `{subject, trial, reason}` |
@@ -60,7 +61,8 @@ Unknown keys are not allowed; extensions go into the manifest.
 | key | value |
 |---|---|
 | `trial_id` | as the source names it |
-| `source` | `{"kind": ..., "files": [{"path": relative, "sha256": ...}], "native_fps": ..., "native_up_axis": ...}` |
+| `source` | `{"kind": ..., "format": ..., "files": [{"path": relative, "sha256": ...}], "native_fps": ..., "native_up_axis": ...}` |
+| `profile` | id and sha256 of the profile that bound this trial (as in `SUMMARY.json`) |
 | `correspondence` | id and sha256 of the map used, plus the fill rule per absent joint |
 | `repairs` | e.g. `{"wrap": ["pelvis_rotation"], "resample": {"from": 120, "to": 100}}` — empty lists mean checked and untouched |
 | `discontinuities` | frames flagged, and the settings key that flagged them |

@@ -1,8 +1,9 @@
 """Command-line entry point.
 
 Only ``--version`` exists in the seed. The subcommands the README specifies (``extract-model``,
-``convert <kind>``, ``info``, ``validate``) are added with the migration phases in docs/plan.md,
-each together with the module it fronts, so that no command ever exists without an implementation.
+``convert --profile`` / ``convert --kind --format``, ``profile validate`` / ``profile show``,
+``fbx2bvh``, ``info``, ``validate``) are added with the migration phases in docs/plan.md, each
+together with the module it fronts, so that no command ever exists without an implementation.
 """
 
 from __future__ import annotations

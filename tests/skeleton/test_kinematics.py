@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from smpl24.skeleton import kinematics as k
-from smpl24.skeleton.definition import PARENTS, SEGMENTS
-from smpl24.skeleton.rotations import axis_angle_to_matrix
+from smpl18.skeleton import kinematics as k
+from smpl18.skeleton.definition import PARENTS, SEGMENTS
+from smpl18.skeleton.rotations import axis_angle_to_matrix
 
 
 def _identity_pose(frames: int | None = None) -> np.ndarray:

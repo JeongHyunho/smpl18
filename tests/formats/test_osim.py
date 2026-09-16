@@ -10,7 +10,7 @@ the orders are derived from the model rather than hardcoded, and pinned here:
 
 import pytest
 
-from smpl24.formats import FormatError, osim
+from smpl18.formats import FormatError, osim
 
 # A miniature lower limb: a floating pelvis, a hip, the coupled walker knee + patellofemoral
 # pair, and a pin ankle. The function is a direct child carrying its concrete type as the tag,

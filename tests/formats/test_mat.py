@@ -4,7 +4,7 @@ import numpy as np
 import scipy.io
 from scipy.io.matlab import mat_struct
 
-from smpl24.formats import mat
+from smpl18.formats import mat
 
 
 def write_mat(path):

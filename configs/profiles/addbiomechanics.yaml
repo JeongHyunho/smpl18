@@ -5,7 +5,7 @@
 # shape fit with no landmark offsets, an unrecorded sex read as the neutral body, and the 53
 # trials that carry no dynamics pass left out. Every value below says what it means for this
 # dataset.
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: addbiomechanics
 description: AddBiomechanics .b3d subjects (OpenSim Rajagopal-family skeletons, marker-driven IK)
 source_kind: skeleton_motion

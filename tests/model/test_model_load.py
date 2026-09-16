@@ -7,7 +7,7 @@ import hashlib
 import numpy as np
 import pytest
 
-from smpl24.model import Model, load
+from smpl18.model import Model, load
 
 
 def test_load_gives_typed_read_only_arrays_and_the_file_hash(tmp_path, tiny):
@@ -61,7 +61,7 @@ def test_a_missing_required_key_is_named(tmp_path, tiny):
         load(path)
 
 
-def test_a_file_whose_tree_is_not_smpl24_is_refused(tmp_path, tiny):
+def test_a_file_whose_tree_is_not_smpl18_is_refused(tmp_path, tiny):
     tiny["kintree_parents"] = np.zeros(24, dtype=np.int64)
     path = tmp_path / "tree.npz"
     np.savez(path, **tiny)

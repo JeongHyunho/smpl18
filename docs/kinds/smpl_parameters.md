@@ -3,7 +3,7 @@
 **What it observes.** SMPL-family parameters already fitted to a body: per trial, axis-angle
 `poses [T, J, 3]` with `J` = 24 (SMPL), 52 (SMPL-H) or 55 (SMPL-X), a translation `trans
 [T, 3]`, a frame rate; per subject (or per sequence), a `betas` vector and a gender. The
-dataclass is `smpl24.sources.SmplParameters`.
+dataclass is `smpl18.sources.SmplParameters`.
 
 **How it becomes SMPL-24.** No fit is needed. The converter keeps the first 24 joints (for
 SMPL-H and SMPL-X the 22 body joints, with the two hands at identity), truncates or pads
@@ -11,6 +11,12 @@ SMPL-H and SMPL-X the 22 body joints, with the two hands at identity), truncates
 the target rate with per-joint Slerp on rotations and linear interpolation on `trans`.
 Every joint's provenance is `measured` except the two hands of an SMPL-H/X source, which are
 `absent`.
+
+**Then the reduction.** Whatever the kind, the 24-joint pose is reduced to the 18 joints the
+corpus stores: four joints frozen to fitted per-subject constants, the two hands dropped,
+orientations preserved exactly (`primer.md` section 5). A joint the source did not drive keeps
+its provenance through the reduction, and a frozen joint's provenance is recorded with the
+constants rather than per trial.
 
 **Formats.** `npz` (arrays by key), `pickle` (a whitelisting unpickler; nested containers
 addressed by a key path), `json`.
@@ -31,4 +37,4 @@ addressed by a key path), `json`.
 | `repairs.resample` | the target rate |
 | `skip.trials_with_nonfinite_input`, `skip.trials_with_fps_other_than` | refusal rules |
 
-Binding is implemented in `smpl24.profile.bind.bind_parameters`.
+Binding is implemented in `smpl18.profile.bind.bind_parameters`.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from smpl24.formats import FormatError, TrcTable, c3d
+from smpl18.formats import FormatError, TrcTable, c3d
 
 ezc3d = pytest.importorskip("ezc3d", reason="ezc3d is not installed")
 

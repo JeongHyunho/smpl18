@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from smpl24.skeleton import rotations as r
+from smpl18.skeleton import rotations as r
 
 PLATE_LOCAL_M = np.array(
     [[0.0000, 0.0000, 0.0], [0.0531, 0.0000, 0.0], [0.0531, 0.0550, 0.0], [-0.0109, 0.0641, 0.0]]

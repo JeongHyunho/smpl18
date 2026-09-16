@@ -13,16 +13,16 @@ import sys
 
 import yaml
 
-from smpl24 import __version__
-from smpl24.profile import Profile, ProfileLoadError, ProfileSchemaError
+from smpl18 import __version__
+from smpl18.profile import Profile, ProfileLoadError, ProfileSchemaError
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="smpl24",
+        prog="smpl18",
         description="Convert motion capture into an SMPL-24 pose corpus.",
     )
-    parser.add_argument("--version", action="version", version=f"smpl24 {__version__}")
+    parser.add_argument("--version", action="version", version=f"smpl18 {__version__}")
     commands = parser.add_subparsers(dest="command")
 
     profile = commands.add_parser(

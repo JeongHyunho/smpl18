@@ -1,6 +1,6 @@
-# Profile schema: `smpl24_profile_v1`
+# Profile schema: `smpl18_profile_v1`
 
-A profile is a YAML file that says everything `smpl24` needs to know about one dataset: which
+A profile is a YAML file that says everything `smpl18` needs to know about one dataset: which
 source kind and file format it is, how its files are laid out, which field means what, its
 units and frame, which correspondence and settings apply, which repairs run and which trials
 are skipped. It is the only place a dataset is named. The engine implements source kinds and
@@ -10,7 +10,7 @@ The schema is declarative. Every policy is an enumerated word (`root.placement`,
 `shape.method`, a fill rule), never an expression. If a dataset needs something these words
 cannot say, the schema or a source kind grows; a special case in code is a defect.
 
-Validation (`smpl24 profile validate`, `Profile.load`) refuses any key the schema does not
+Validation (`smpl18 profile validate`, `Profile.load`) refuses any key the schema does not
 name, anywhere in the file, and reports the dotted path of the offending key, for example
 `bindings.gender.mapp: unknown key; allowed keys are [...]`. Keys marked *required* below must
 be present; the others may be omitted, in which case the feature is off.
@@ -18,7 +18,7 @@ be present; the others may be omitted, in which case the feature is off.
 Field references (`field:`) are either a top-level key of the file's tables (`poses`) or a list
 of keys walking into a nested container (`[smpl_params, poses]`, `[Segment, "{body}", SegRot]`).
 File references resolve, in order, as an absolute path; relative to the profile's own directory;
-relative to the package `configs/` directory; relative to `$SHARED_DATASET_PATH/smpl24/`. Any
+relative to the package `configs/` directory; relative to `$SHARED_DATASET_PATH/smpl18/`. Any
 string value may contain `${VAR}`, which is replaced from the environment; an unset variable is
 an error naming the key.
 
@@ -28,7 +28,7 @@ an error naming the key.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `schema` | yes | The constant `smpl24_profile_v1`. |
+| `schema` | yes | The constant `smpl18_profile_v1`. |
 | `id` | yes | The dataset id, recorded in every corpus manifest. |
 | `description` | no | One line for humans. |
 | `source_kind` | yes | `smpl_parameters`, `skeleton_motion`, `joint_centres` or `marker_trajectories`; see `docs/kinds/`. |
@@ -36,7 +36,7 @@ an error naming the key.
 | `layout` | yes | How subjects and trials are found under `--input`. |
 | `bindings` | yes | Which field means what, in the file's own names. |
 | `conventions` | yes | Up axis, length unit, angle unit of the source. |
-| `correspondence` | skeleton, centres, markers | Path to a `smpl24_correspondence_v1` file. Not allowed for `smpl_parameters`. |
+| `correspondence` | skeleton, centres, markers | Path to a `smpl18_correspondence_v1` file. Not allowed for `smpl_parameters`. |
 | `markerset` | markers | Path to a marker-set description. Only for `marker_trajectories`. |
 | `shape` | all but markers optional | How the subject's shape is decided. |
 | `root` | skeleton, centres, markers | Where SMPL's root goes and how its constant is fixed. |
@@ -100,7 +100,7 @@ placeholder must match the same text. Discovery is sorted by relative path.
 
 ## `correspondence` and `markerset`
 
-Paths. A correspondence file (`smpl24_correspondence_v1`) lists, per SMPL-24 joint, the source
+Paths. A correspondence file (`smpl18_correspondence_v1`) lists, per SMPL-24 joint, the source
 joints or body that drive it and the centre it is fitted to, or a fill rule for a joint the
 source lacks: `weld` (identity local rotation, the joint follows its parent), `distribute` (a
 share of a measured parent rotation, as the three spine joints share the trunk's), `estimate`
@@ -169,7 +169,7 @@ from a companion file. A joint whose driving body is not in the set becomes `abs
 
 ## `settings`
 
-A path or a list of paths to `smpl24_settings_v1` files, deep-merged in order. Every numeric
+A path or a list of paths to `smpl18_settings_v1` files, deep-merged in order. Every numeric
 limit, weight and sample size the engine uses is read from the merged mapping and copied into
 every trial manifest; the library has no defaults for them. The package ships
 `configs/settings/default.yaml` with every value cited to the code it came from.
@@ -179,7 +179,7 @@ every trial manifest; the library has no defaults for them. The package ships
 ## Example
 
 ```yaml
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: example
 source_kind: skeleton_motion
 format: b3d
@@ -199,5 +199,5 @@ skip: {trials_without_pass: dynamics}
 settings: ../settings/default.yaml
 ```
 
-`smpl24 profile show example.yaml` prints the profile as loaded, every referenced file with
+`smpl18 profile show example.yaml` prints the profile as loaded, every referenced file with
 its absolute path and SHA-256, and the merged settings.

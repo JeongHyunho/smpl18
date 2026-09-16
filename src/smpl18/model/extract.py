@@ -1,10 +1,10 @@
 """Fail-closed extraction of a licensed SMPL ``.pkl`` into a chumpy-free clean npz.
 
-The pickle is read through :mod:`smpl24.formats.pickle_safe`, so no code from it runs and the
+The pickle is read through :mod:`smpl18.formats.pickle_safe`, so no code from it runs and the
 licensed original is never modified. The output holds exactly what the skeleton needs
 (``v_template``, ``shapedirs`` cut to ``num_betas``, ``J_regressor``, ``kintree_parents`` with
 the root's parent at -1) and, with ``with_mesh``, the skinning trio ``weights``, ``posedirs``,
-``faces``. Every array is validated as a :class:`~smpl24.model.load.Model` before it is written,
+``faces``. Every array is validated as a :class:`~smpl18.model.load.Model` before it is written,
 so nothing the loader would refuse ever reaches disk.
 
 ``main`` is the body of the ``extract-model`` command.
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from smpl24.formats import pickle_safe
+from smpl18.formats import pickle_safe
 from .load import MESH_KEYS, REQUIRED_KEYS, Model
 from .select import GENDERS, model_filename
 
@@ -98,7 +98,7 @@ def extract_clean(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="smpl24 extract-model",
+        prog="smpl18 extract-model",
         description="Extract a licensed SMPL .pkl into a chumpy-free clean npz without running code from it.",
     )
     parser.add_argument("--pkl", required=True, help="the basicmodel_*.pkl to read")

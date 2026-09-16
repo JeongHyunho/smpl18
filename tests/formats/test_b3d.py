@@ -13,8 +13,8 @@ import struct
 import numpy as np
 import pytest
 
-from smpl24.formats import FormatError, b3d
-from smpl24.formats._vendor.nimblephysics import SubjectOnDisk_pb2 as pb
+from smpl18.formats import FormatError, b3d
+from smpl18.formats._vendor.nimblephysics import SubjectOnDisk_pb2 as pb
 
 NUM_DOFS = 3
 NUM_CENTRES = 2

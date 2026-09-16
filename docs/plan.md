@@ -1,4 +1,4 @@
-# smpl24 — design and roadmap
+# smpl18 — design and roadmap
 
 | | |
 |---|---|
@@ -12,9 +12,13 @@
 
 Motion capture arrives in incompatible shapes: SMPL-family parameter files, articulated skeletons
 with joint angles, joint-centre trajectories, raw surface markers. Downstream work wants one
-representation. `smpl24` converts any of them into an **SMPL-24 pose corpus**: one body shape per
-subject, one axis-angle pose sequence per trial on the 24-joint SMPL skeleton, with a record of
-where every joint's motion came from.
+representation. `smpl18` converts any of them into an **18-joint reduced-model pose corpus**: one
+body shape per subject, one axis-angle pose sequence per trial, with a record of where every
+joint's motion came from.
+
+Every path goes through the full 24-joint SMPL pose first, because that is what the sources and
+the body model speak, and is reduced at the end (section 3.6). The reduction freezes four joints
+to per-subject constants chosen by optimisation, not by assumption.
 
 One rule shapes the code:
 
@@ -51,7 +55,7 @@ means writing a profile, never a module.
 ## 2. Repository shape
 
 ```
-smpl24/
+smpl18/
 ├── README.md  CHANGELOG.md  LICENSE  pyproject.toml
 ├── docs/
 │   ├── plan.md               this document
@@ -65,7 +69,7 @@ smpl24/
 │   ├── markersets/           marker labels -> joint-centre rules
 │   ├── offsets/              landmark offset tables
 │   └── settings/             filter cut-offs, joint-rate limits, IK weights, joint ranges
-├── src/smpl24/
+├── src/smpl18/
 │   ├── __init__.py  cli.py
 │   ├── model/        extract.py  load.py  select.py
 │   ├── skeleton/     definition.py  rotations.py  kinematics.py  frames.py
@@ -93,7 +97,7 @@ about datasets; `fit`/`repair`/`corpus` know nothing about formats; `profile` bi
 
 ## 3. Design
 
-### 3.1 Source kinds (`smpl24.sources`)
+### 3.1 Source kinds (`smpl18.sources`)
 
 | Kind | Observes | Data | Converter |
 |---|---|---|---|
@@ -106,7 +110,7 @@ Skeleton models are themselves generic: an OpenSim-style model (custom joints, s
 coordinates) and a BVH-style one (offset hierarchy with Euler channels). FBX is not a skeleton
 model here: an external Blender step exports BVH, which this package reads.
 
-### 3.2 Formats (`smpl24.formats`)
+### 3.2 Formats (`smpl18.formats`)
 
 Readers return **tables with the file's own names** and never interpret them: `npz` and the
 whitelisting pickle reader (no code execution) return arrays by key; JSON returns objects; `osim`
@@ -115,12 +119,12 @@ trajectories with rates and units; `b3d` returns the embedded `.osim`, the proce
 the subject fields as stored; `bvh` returns hierarchy plus channels; `mat` returns variables. A
 format has no idea which dataset it serves, and it converts no units and no frames.
 
-### 3.3 Profiles (`smpl24.profile`)
+### 3.3 Profiles (`smpl18.profile`)
 
-A profile is the only place a dataset appears. Schema `smpl24_profile_v1`, in outline:
+A profile is the only place a dataset appears. Schema `smpl18_profile_v1`, in outline:
 
 ```yaml
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: <dataset id>
 source_kind: smpl_parameters | skeleton_motion | joint_centres | marker_trajectories
 format: npz | pickle | json | osim_mot | b3d | trc | c3d | bvh | mat
@@ -147,7 +151,7 @@ settings: ../settings/<file>.yaml
 ```
 
 The loader refuses unknown keys and names the offending path, resolves a profile name as a path,
-then as a shipped example, then under `$SHARED_DATASET_PATH/smpl24/profiles/`, resolves relative
+then as a shipped example, then under `$SHARED_DATASET_PATH/smpl18/profiles/`, resolves relative
 references against the profile's own directory, substitutes `${SHARED_DATASET_PATH}` in values,
 and hashes every referenced file into the corpus manifests. `bind.py` turns a profile plus format
 tables into the kind's data; `layout.py` discovers subjects and trials on disk.
@@ -182,25 +186,44 @@ code belongs to a kind or a format, and the profile only points at it.
 - `validate` reports forward-kinematics reproduction against the source observations, bone-length
   residuals, joint-range coverage, and a round trip for `smpl_parameters` input.
 
-### 3.6 Settings discipline
+### 3.6 Reduction to 18 joints (`smpl18.reduce`)
+
+The corpus stores 18 joints. `spine1`, `spine2` and both collars are frozen to per-subject
+constants; the two hand joints are dropped; `spine3` and the two shoulders absorb the frozen
+joints' rotation exactly, so every segment's world orientation is unchanged by the reduction.
+
+What the freeze does change is joint positions, and by how much depends on the constants. They are
+therefore **fitted**: twelve parameters (four rotation vectors) by nonlinear least squares, from a
+starting guess of each frozen joint's mean rotation, minimising the joint-centre difference between
+the reduced and the original pose over the affected joints (spine3, neck, head, shoulders, elbows,
+wrists). Frames are subsampled to a count the settings name; the solver, its iteration cap and that
+count are settings, never code defaults.
+
+The subject record keeps the constants, which joint absorbed each, the fitted residual and the
+starting guess's residual (RMS and maximum, in metres), the per-joint RMS, the frames used and
+whether the solver converged. A reader can rebuild the 24-joint pose from that, and can see what
+the reduction cost before trusting it. `primer.md` section 5 states the mathematics and says when
+the reduction is the wrong thing to do.
+
+### 3.7 Settings discipline
 
 No numeric limit has a default in library code. Functions take a `settings` mapping resolved by the
 profile and fail when a required key is missing; `configs/settings/` ships documented examples. A
 threshold that lives in configuration is visible in the corpus manifest afterwards, and two runs
 cannot disagree silently about it.
 
-### 3.7 CLI
+### 3.8 CLI
 
 ```
-smpl24 extract-model --pkl <file> --gender <g> --out <dir>
-smpl24 convert --profile <profile.yaml> --input <root> --models <dir> --out <corpus>
-smpl24 convert --kind <kind> --format <fmt> [--correspondence ...] [--markerset ...] --settings ... \
+smpl18 extract-model --pkl <file> --gender <g> --out <dir>
+smpl18 convert --profile <profile.yaml> --input <root> --models <dir> --out <corpus>
+smpl18 convert --kind <kind> --format <fmt> [--correspondence ...] [--markerset ...] --settings ... \
                --input <file-or-root> --models <dir> --out <corpus>      # ad hoc, no profile
-smpl24 profile validate <name-or-path>
-smpl24 profile show <name-or-path>          # resolved bindings, referenced files and their hashes
-smpl24 fbx2bvh --input <clip.fbx> --blender <exe> --out <clip.bvh>
-smpl24 info <corpus>
-smpl24 validate <corpus> [--against <source>]
+smpl18 profile validate <name-or-path>
+smpl18 profile show <name-or-path>          # resolved bindings, referenced files and their hashes
+smpl18 fbx2bvh --input <clip.fbx> --blender <exe> --out <clip.bvh>
+smpl18 info <corpus>
+smpl18 validate <corpus> [--against <source>]
 ```
 
 A subcommand is added only together with the module it fronts, so no command exists without an
@@ -212,11 +235,11 @@ implementation.
 
 | Decision | Outcome |
 |---|---|
-| Name | `smpl24`: the skeleton's name, one word for the distribution, the import and the command |
+| Name | `smpl18`: the skeleton's name, one word for the distribution, the import and the command |
 | Licence | MIT (`LICENSE`), covering this code only. SMPL body models and every dataset keep their own licences |
 | Repository | private while the work is in progress |
 | `.c3d` reading | `ezc3d`, a regular dependency |
-| FBX | a Blender bridge (`smpl24 fbx2bvh`); native FBX reading is out of scope |
+| FBX | a Blender bridge (`smpl18 fbx2bvh`); native FBX reading is out of scope |
 | Profiles that cannot be published | kept outside this repository and found through `SHARED_DATASET_PATH` |
 
 ---
@@ -229,6 +252,7 @@ implementation.
 | Skeleton: joint definition, rotations and Kabsch, forward kinematics, frame changes | **done** |
 | Formats: osim, mot, trc, c3d, b3d, bvh, npz, json, mat, whitelisted pickle | **done** |
 | Profiles: schema, loader, layout discovery, parameter binding, `profile validate` / `show` | **done** |
+| Reduction to 18 joints with the fitted constants (`smpl18.reduce`) | **done** |
 | Sources: skeleton FK models, joint-centre and marker kinds | next |
 | Fit: shape, correspondence, pose transfer, position IK, root | next |
 | Repair and corpus: wrap, resample, discontinuity; corpus write, read, summary | after fit |

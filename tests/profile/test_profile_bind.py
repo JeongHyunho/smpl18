@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from smpl24.profile.bind import (
+from smpl18.profile.bind import (
     BindingError,
     MissingField,
     UnresolvedGender,
@@ -10,7 +10,7 @@ from smpl24.profile.bind import (
     resolve_fps,
     resolve_gender,
 )
-from smpl24.sources import SmplParameters, Trial, UpAxis
+from smpl18.sources import SmplParameters, Trial, UpAxis
 
 
 def tables(frames: int = 5, joints: int = 52, **extra) -> dict:

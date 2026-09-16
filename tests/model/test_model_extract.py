@@ -7,8 +7,8 @@ import pickle
 import numpy as np
 import pytest
 
-from smpl24.formats.pickle_safe import BlockedGlobal
-from smpl24.model import (
+from smpl18.formats.pickle_safe import BlockedGlobal
+from smpl18.model import (
     MESH_KEYS,
     REQUIRED_KEYS,
     Extracted,
@@ -16,8 +16,8 @@ from smpl24.model import (
     extract_clean,
     load,
 )
-from smpl24.model.extract import main
-from smpl24.skeleton.definition import PARENTS
+from smpl18.model.extract import main
+from smpl18.skeleton.definition import PARENTS
 
 
 @pytest.fixture

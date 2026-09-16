@@ -2,7 +2,7 @@
 
 The set is three files, ``SMPL_MALE_clean.npz``, ``SMPL_FEMALE_clean.npz`` and
 ``SMPL_NEUTRAL_clean.npz``, in one directory. That directory comes from the ``root`` argument
-or the ``SMPL24_MODELS`` environment variable and from nowhere else: there is no default path,
+or the ``SMPL18_MODELS`` environment variable and from nowhere else: there is no default path,
 so a run on another machine fails at once instead of quietly reading a different model.
 
 Gender is one of ``male``, ``female``, ``neutral``. Mapping a source's own labels (``f``,
@@ -37,7 +37,7 @@ GENDER_NEUTRAL = "neutral"
 GENDERS: tuple[str, ...] = (GENDER_MALE, GENDER_FEMALE, GENDER_NEUTRAL)
 
 #: The environment variable naming the directory that holds the model set.
-ENV_MODELS = "SMPL24_MODELS"
+ENV_MODELS = "SMPL18_MODELS"
 
 MODEL_FILENAMES: dict[str, str] = {gender: f"SMPL_{gender.upper()}_clean.npz" for gender in GENDERS}
 
@@ -47,7 +47,7 @@ class UnresolvedGender(ValueError):
 
 
 class ModelRootUnset(LookupError):
-    """Neither a ``root`` argument nor ``SMPL24_MODELS`` says where the model set lives."""
+    """Neither a ``root`` argument nor ``SMPL18_MODELS`` says where the model set lives."""
 
 
 def model_filename(gender: str) -> str:
@@ -61,7 +61,7 @@ def model_filename(gender: str) -> str:
 
 
 def model_root(root: str | Path | None = None) -> Path:
-    """The model-set directory: ``root`` if given, else ``$SMPL24_MODELS``, else an error."""
+    """The model-set directory: ``root`` if given, else ``$SMPL18_MODELS``, else an error."""
     if root is not None:
         return Path(root)
     from_env = os.environ.get(ENV_MODELS)

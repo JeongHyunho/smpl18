@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from smpl24.profile import (
+from smpl18.profile import (
     EnvironmentVariableUnset,
     Profile,
     ProfileNotFound,
@@ -12,9 +12,9 @@ from smpl24.profile import (
     ReferenceNotFound,
     resolve_profile_path,
 )
-from smpl24.profile import load as load_module
-from smpl24.profile.load import substitute_env
-from smpl24.sources import Format, SourceKind
+from smpl18.profile import load as load_module
+from smpl18.profile.load import substitute_env
+from smpl18.sources import Format, SourceKind
 
 from .conftest import SETTINGS, write_yaml
 
@@ -41,7 +41,7 @@ def test_a_name_resolves_in_the_package_before_the_shared_drive(
 ) -> None:
     write_yaml(fake_package / "profiles" / "demo.yaml", {"from": "package"})
     shared = tmp_path / "shared"
-    write_yaml(shared / "smpl24" / "profiles" / "demo.yaml", {"from": "shared"})
+    write_yaml(shared / "smpl18" / "profiles" / "demo.yaml", {"from": "shared"})
     monkeypatch.setenv("SHARED_DATASET_PATH", str(shared))
     assert resolve_profile_path("demo") == (fake_package / "profiles" / "demo.yaml").resolve()
     assert resolve_profile_path("demo.yaml") == (fake_package / "profiles" / "demo.yaml").resolve()
@@ -49,11 +49,11 @@ def test_a_name_resolves_in_the_package_before_the_shared_drive(
 
 def test_a_name_falls_back_to_the_shared_drive(fake_package, monkeypatch, tmp_path) -> None:
     shared = tmp_path / "shared"
-    write_yaml(shared / "smpl24" / "profiles" / "only_shared.yaml", {"from": "shared"})
+    write_yaml(shared / "smpl18" / "profiles" / "only_shared.yaml", {"from": "shared"})
     monkeypatch.setenv("SHARED_DATASET_PATH", str(shared))
     assert (
         resolve_profile_path("only_shared")
-        == (shared / "smpl24" / "profiles" / "only_shared.yaml").resolve()
+        == (shared / "smpl18" / "profiles" / "only_shared.yaml").resolve()
     )
 
 
@@ -85,7 +85,7 @@ def test_unset_variable_names_the_key(no_shared) -> None:
 def test_profile_needing_the_variable_fails_clearly_when_unset(
     profile_dir, fake_package, no_shared, parameters_profile
 ) -> None:
-    parameters_profile["settings"] = "${SHARED_DATASET_PATH}/smpl24/settings/default.yaml"
+    parameters_profile["settings"] = "${SHARED_DATASET_PATH}/smpl18/settings/default.yaml"
     path = write_yaml(profile_dir / "needs_env.yaml", parameters_profile)
     with pytest.raises(EnvironmentVariableUnset) as info:
         Profile.load(path)
@@ -114,8 +114,8 @@ def test_a_reference_falls_back_to_the_package_then_the_shared_drive(
 ) -> None:
     write_yaml(fake_package / "settings" / "engine.yaml", {**SETTINGS, "id": "package"})
     shared = tmp_path / "shared"
-    write_yaml(shared / "smpl24" / "settings" / "engine.yaml", {**SETTINGS, "id": "shared"})
-    write_yaml(shared / "smpl24" / "settings" / "only_shared.yaml", {**SETTINGS, "id": "only"})
+    write_yaml(shared / "smpl18" / "settings" / "engine.yaml", {**SETTINGS, "id": "shared"})
+    write_yaml(shared / "smpl18" / "settings" / "only_shared.yaml", {**SETTINGS, "id": "only"})
     monkeypatch.setenv("SHARED_DATASET_PATH", str(shared))
 
     parameters_profile["settings"] = ["settings/engine.yaml", "settings/only_shared.yaml"]
@@ -123,7 +123,7 @@ def test_a_reference_falls_back_to_the_package_then_the_shared_drive(
     profile = Profile.load(path)
     paths = [entry.path for entry in profile.referenced_files()]
     assert paths[0] == (fake_package / "settings" / "engine.yaml").resolve()
-    assert paths[1] == (shared / "smpl24" / "settings" / "only_shared.yaml").resolve()
+    assert paths[1] == (shared / "smpl18" / "settings" / "only_shared.yaml").resolve()
     assert profile.settings["id"] == "only"      # later files override earlier ones
 
 
@@ -142,7 +142,7 @@ def test_a_missing_reference_lists_every_place_tried(
 def test_settings_files_deep_merge_in_order(profile_dir, fake_package, no_shared,
                                            parameters_profile) -> None:
     write_yaml(profile_dir / "override.yaml",
-               {"schema": "smpl24_settings_v1", "shape_fit": {"regularisation": 0.5}})
+               {"schema": "smpl18_settings_v1", "shape_fit": {"regularisation": 0.5}})
     parameters_profile["settings"] = ["settings.yaml", "override.yaml"]
     path = write_yaml(profile_dir / "merged.yaml", parameters_profile)
     profile = Profile.load(path)

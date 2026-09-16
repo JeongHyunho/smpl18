@@ -1,7 +1,7 @@
 # Numbers the GAITEX conversion sets for itself, layered over default.yaml by the profile's
 # settings list, plus the joint ranges declared for this dataset. They are the values the
 # reference conversion of 2026-09-15 ran with.
-schema: smpl24_settings_v1
+schema: smpl18_settings_v1
 id: gaitex
 
 shape_fit:

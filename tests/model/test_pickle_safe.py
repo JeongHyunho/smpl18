@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 import scipy.sparse
 
-from smpl24.formats import pickle_safe
-from smpl24.formats.pickle_safe import BlockedGlobal, Ch, SafeUnpickler
+from smpl18.formats import pickle_safe
+from smpl18.formats.pickle_safe import BlockedGlobal, Ch, SafeUnpickler
 
 
 def _dump(obj, path, protocol):

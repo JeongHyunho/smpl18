@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from smpl24.sources.base import SmplParameters, Subject, Trial
+from smpl18.sources.base import SmplParameters, Subject, Trial
 
 __all__ = [
     "BindingError",

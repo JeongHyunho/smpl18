@@ -1,7 +1,7 @@
 # Engine settings shared by every profile. Numbers only live here, never in library code: a
 # function that needs one of these takes a settings mapping and fails when the key is missing.
 # These are the values the reference conversions of 2026-09-15 ran with.
-schema: smpl24_settings_v1
+schema: smpl18_settings_v1
 id: default
 
 shape_fit:
@@ -50,6 +50,18 @@ discontinuity:
   trunk_inversion_limit_deg: 150.0
   # Which SMPL joints the trunk angle is measured between.
   trunk_joints: [pelvis, spine3]
+
+reduce:
+  # The corpus stores 18 joints: spine1, spine2 and both collars are frozen to per-subject
+  # constants and the hands are dropped. The constants are fitted, not assumed, because a wrong
+  # constant displaces every joint below the freeze while leaving orientations exact.
+  # Most frames the fit measures; a longer trial is sampled evenly down to this, so a long take
+  # costs no more to fit than a short one.
+  sample_frames: 1500
+  # scipy.optimize.least_squares method for the twelve parameters (four rotation vectors).
+  optimiser: lm
+  # Cap on residual evaluations, so a pathological subject cannot stall a corpus.
+  max_evaluations: 200
 
 frames:
   # Whole trials are converted unless a profile's settings say otherwise.

@@ -8,15 +8,15 @@ import pathlib
 import pytest
 import yaml
 
-SETTINGS = {"schema": "smpl24_settings_v1", "id": "t", "shape_fit": {"n_betas": 10},
+SETTINGS = {"schema": "smpl18_settings_v1", "id": "t", "shape_fit": {"n_betas": 10},
             "discontinuity": {"gyro_abs_max_deg_s": 8000.0}}
 
-CORRESPONDENCE = {"schema": "smpl24_correspondence_v1", "id": "t", "names": "opensim_joints",
+CORRESPONDENCE = {"schema": "smpl18_correspondence_v1", "id": "t", "names": "opensim_joints",
                   "joints": {"pelvis": {"source": ["ground_pelvis"]}}, "trunk_body": "torso",
                   "aliases": {}, "root_translation": []}
 
 PARAMETERS_PROFILE = {
-    "schema": "smpl24_profile_v1",
+    "schema": "smpl18_profile_v1",
     "id": "params_fixture",
     "source_kind": "smpl_parameters",
     "format": "npz",
@@ -39,7 +39,7 @@ PARAMETERS_PROFILE = {
 }
 
 SKELETON_PROFILE = {
-    "schema": "smpl24_profile_v1",
+    "schema": "smpl18_profile_v1",
     "id": "skeleton_fixture",
     "source_kind": "skeleton_motion",
     "format": "b3d",

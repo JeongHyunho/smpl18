@@ -1,6 +1,6 @@
 import pytest
 
-from smpl24.profile.schema import ProfileSchemaError, validate_profile
+from smpl18.profile.schema import ProfileSchemaError, validate_profile
 
 
 def test_fixture_profiles_validate(parameters_profile, skeleton_profile) -> None:
@@ -50,7 +50,7 @@ def test_bad_gender_map_target_is_refused(parameters_profile) -> None:
 
 
 def test_wrong_schema_id_is_refused(parameters_profile) -> None:
-    parameters_profile["schema"] = "smpl24_profile_v2"
+    parameters_profile["schema"] = "smpl18_profile_v2"
     with pytest.raises(ProfileSchemaError) as info:
         validate_profile(parameters_profile)
     assert info.value.path == "schema"

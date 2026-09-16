@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from smpl24.formats import FormatError, TrcTable, trc
+from smpl18.formats import FormatError, TrcTable, trc
 
 DT_S = 0.01
 FRAMES = 6

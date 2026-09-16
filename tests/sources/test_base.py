@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from smpl24.sources import (
+from smpl18.sources import (
     Format,
     JointCentres,
     MarkerTrajectories,

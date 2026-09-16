@@ -3,7 +3,7 @@
 # The table is intersected with the skeleton a file actually declares: a joint the model lacks
 # makes its SMPL joint `absent` by the same rule that leaves the neck absent in every variant.
 # Nothing here is a special case.
-schema: smpl24_correspondence_v1
+schema: smpl18_correspondence_v1
 id: opensim_rajagopal
 # Entries name source *joints*; the body driving an SMPL joint's rotation is the child body of
 # the LAST joint in its chain (the distal segment SMPL spans: the calcaneus past the subtalar,

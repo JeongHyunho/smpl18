@@ -2,7 +2,7 @@
 
 import json
 
-from smpl24.formats import jsonfile
+from smpl18.formats import jsonfile
 
 
 def test_the_object_comes_back_as_encoded(tmp_path):

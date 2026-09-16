@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from smpl24.formats import FormatError, bvh
+from smpl18.formats import FormatError, bvh
 
 # A three-level tree with one End Site on each leaf, the root carrying six channels in the
 # usual position-then-rotation order and the joints three rotations in a different order each.

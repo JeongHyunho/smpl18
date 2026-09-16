@@ -7,9 +7,9 @@ import json
 import numpy as np
 import pytest
 
-from smpl24.skeleton import frames as f
-from smpl24.skeleton import kinematics as k
-from smpl24.skeleton.rotations import axis_angle_to_matrix
+from smpl18.skeleton import frames as f
+from smpl18.skeleton import kinematics as k
+from smpl18.skeleton.rotations import axis_angle_to_matrix
 
 GRAVITY_Y_UP = (0.0, -9.80665, 0.0)
 GRAVITY_Z_UP = (0.0, 0.0, -9.80665)

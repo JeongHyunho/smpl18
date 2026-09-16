@@ -1,7 +1,7 @@
 """No dataset may be named in library code: a dataset is a profile, never a module.
 
 The ids come from the profiles in configs/, so the guard grows with them and names no dataset
-of its own. Their appearance anywhere under src/smpl24 (code, docstrings or comments) is the
+of its own. Their appearance anywhere under src/smpl18 (code, docstrings or comments) is the
 risk the plan's Risks section warns about.
 """
 
@@ -11,7 +11,7 @@ import re
 import pytest
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[1]
-SRC = PACKAGE / "src" / "smpl24"
+SRC = PACKAGE / "src" / "smpl18"
 #: Every shipped profile id, plus the stems of the tables the profiles point at, so a name that
 #: belongs to a dataset cannot reach the library through either route.
 DATASET_IDS = tuple(sorted({

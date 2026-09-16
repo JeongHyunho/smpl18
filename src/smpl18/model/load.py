@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from smpl24.skeleton.definition import NUM_JOINTS, PARENTS
+from smpl18.skeleton.definition import NUM_JOINTS, PARENTS
 from .select import MODEL_FILENAMES, file_sha256, model_path_for_gender
 
 __all__ = ["MESH_KEYS", "Model", "REQUIRED_KEYS", "load"]
@@ -94,7 +94,7 @@ class Model:
 
     @classmethod
     def for_gender(cls, gender: str, root: str | Path | None = None) -> Model:
-        """Load the model :func:`smpl24.model.select.model_path_for_gender` names."""
+        """Load the model :func:`smpl18.model.select.model_path_for_gender` names."""
         return load(model_path_for_gender(gender, root), gender=gender)
 
 

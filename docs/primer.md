@@ -328,7 +328,74 @@ list, and the code revision.
 
 ---
 
-## 5. Common mistakes
+## 5. The 18-joint reduced model
+
+A corpus does not store all 24 joints. Four of them carry almost no motion in most capture, and
+several sources do not drive them at all: `spine1` (3), `spine2` (6), `left_collar` (13) and
+`right_collar` (14). Freezing them to a per-subject constant makes the skeleton simpler and the
+pose stream smaller; the two hand joints (22, 23) are dropped for the same reason. What remains
+is 18 joints, in ascending index order:
+
+`pelvis, left_hip, right_hip, left_knee, right_knee, left_ankle, right_ankle, spine3, left_foot,
+right_foot, neck, head, left_shoulder, right_shoulder, left_elbow, right_elbow, left_wrist,
+right_wrist`
+
+### 5.1 Freezing changes everything below the joint
+
+A frozen joint sits between segments, so setting it to a constant would rotate and displace the
+whole chain below it. The rotation part is recoverable exactly: the joint just below each frozen
+one absorbs the difference. With local rotations `R[t, j]` and constants `C_j`,
+
+```
+R'[:, 9]  = (C_6ᵀ C_3ᵀ) · (R[:, 3] · R[:, 6] · R[:, 9])     spine3 absorbs spine1 and spine2
+R'[:, 16] = C_13ᵀ · (R[:, 13] · R[:, 16])                    left_shoulder absorbs left_collar
+R'[:, 17] = C_14ᵀ · (R[:, 14] · R[:, 17])                    right_shoulder absorbs right_collar
+R'[:, j]  = C_j                                              j in (3, 6, 13, 14)
+```
+
+**Every segment below keeps its world orientation exactly, for any choice of constants.** That is
+worth stating plainly: the reduction costs nothing in orientation, which is what an inertial
+sensor or a joint-angle comparison reads.
+
+### 5.2 What it does cost, and how the constants are chosen
+
+Positions do not survive. The frozen joints have a rest offset, so a constant that differs from
+the joint's true rotation moves every joint below it: the shoulders, the arms, the neck and the
+head shift bodily. The cost depends on which constant is chosen, so the constant is not guessed
+from the rest pose or averaged and left alone. It is **fitted to minimise the motion error the
+fixation causes**:
+
+```
+minimise over C_3, C_6, C_13, C_14:
+    Σ_frames Σ_j∈affected  | FK_reduced(t)[j] − FK_original(t)[j] |²
+    affected = spine3, neck, head, both shoulders, both elbows, both wrists
+```
+
+Twelve parameters (four rotation vectors), solved by nonlinear least squares from a starting
+guess of each frozen joint's mean rotation over the trial. The starting guess is already sensible,
+which is why the fit's value is measurable rather than assumed: the corpus records the residual of
+both, so a reader can see what the optimisation bought.
+
+The fit is per subject, not per trial: the constants describe that body's posture in the frozen
+joints, and a corpus with one constant per subject stays internally consistent across trials.
+
+### 5.3 What is recorded
+
+Every corpus carries, per subject: the four constants, which kept joint absorbed each, the
+residual after the fit and the residual of the starting guess (RMS and maximum, in metres), the
+per-joint RMS, the number of frames used, and whether the solver converged. That is enough to
+rebuild the 24-joint pose and enough to decide whether the reduction is acceptable for a use.
+
+### 5.4 When it is the wrong thing to do
+
+If a study measures trunk or shoulder-girdle motion — shrugging, scapular rhythm, spinal
+segmental movement — the frozen joints are exactly what it wants to see, and the reduced model
+throws it away. Read the recorded residual before assuming the reduction is harmless: a subject
+whose fitted residual stays large is telling you their motion does not fit the assumption.
+
+---
+
+## 6. Common mistakes
 
 | Mistake | Symptom | Remedy |
 |---|---|---|
@@ -347,7 +414,7 @@ list, and the code revision.
 
 ---
 
-## 6. Glossary
+## 7. Glossary
 
 | Term | Meaning |
 |---|---|

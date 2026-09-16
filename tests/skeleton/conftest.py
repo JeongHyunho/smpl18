@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from smpl24.model import Model
-from smpl24.skeleton.definition import NUM_JOINTS, PARENTS
+from smpl18.model import Model
+from smpl18.skeleton.definition import NUM_JOINTS, PARENTS
 
 LEFT_LEG = (1, 4, 7, 10)
 RIGHT_LEG = (2, 5, 8, 11)

@@ -13,7 +13,7 @@
 # The shipped AddBiomechanics profile does NOT apply this table (its reference conversion ran with
 # no landmark offsets); it is here so a profile can opt in by pointing shape.landmark_offsets at
 # it.
-schema: smpl24_landmark_offsets_v1
+schema: smpl18_landmark_offsets_v1
 id: addbiomechanics_landmarks_v1
 unit: m
 sign: smpl_minus_measured

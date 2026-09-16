@@ -1,7 +1,7 @@
 import yaml
 
-from smpl24 import __version__
-from smpl24.cli import main
+from smpl18 import __version__
+from smpl18.cli import main
 
 from .conftest import write_yaml
 
@@ -44,4 +44,4 @@ def test_version_still_works(capsys) -> None:
         main(["--version"])
     except SystemExit as exit_info:
         assert exit_info.code == 0
-    assert capsys.readouterr().out.strip() == f"smpl24 {__version__}"
+    assert capsys.readouterr().out.strip() == f"smpl18 {__version__}"

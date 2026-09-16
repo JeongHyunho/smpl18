@@ -1,4 +1,4 @@
-"""The profile schema, ``smpl24_profile_v1``, and its validator.
+"""The profile schema, ``smpl18_profile_v1``, and its validator.
 
 A profile is data: which kind and format a dataset is, how its files are laid out, which field
 means what, its units and frame, its correspondence, its repairs and its settings. The schema is
@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from smpl24.sources.base import Format, SourceKind
+from smpl18.sources.base import Format, SourceKind
 
 __all__ = [
     "FILL_RULES",
@@ -27,7 +27,7 @@ __all__ = [
     "validate_profile",
 ]
 
-SCHEMA_ID = "smpl24_profile_v1"
+SCHEMA_ID = "smpl18_profile_v1"
 
 ROOT_PLACEMENTS = ("pelvis_centre", "source_translation", "none")
 ROOT_ALIGNMENTS = ("child_offsets", "directions")

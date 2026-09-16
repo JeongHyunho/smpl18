@@ -18,7 +18,7 @@ from .definition import NUM_JOINTS, PARENTS, SEGMENTS
 from .rotations import axis_angle_to_matrix
 
 if TYPE_CHECKING:
-    from smpl24.model.load import Model
+    from smpl18.model.load import Model
 
 __all__ = [
     "fk",

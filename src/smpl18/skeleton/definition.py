@@ -6,14 +6,24 @@ or a read-only array so no caller can edit the tree in place.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 import numpy as np
 
 __all__ = [
+    "ABSORBERS",
+    "AFFECTED_BY_FREEZE",
     "BODY_JOINTS",
     "BODY_JOINT_NAMES",
     "CHILDREN",
+    "DROPPED_JOINTS",
+    "FROZEN_JOINTS",
+    "FROZEN_JOINT_NAMES",
     "HAND_JOINTS",
+    "JOINT18_NAMES",
     "JOINT_NAMES",
+    "KEEP18",
     "NUM_JOINTS",
     "PARENTS",
     "PARENTS_ARRAY",
@@ -46,6 +56,42 @@ HAND_JOINTS: tuple[int, ...] = (22, 23)
 #: The 22 body joints: all but the hands.
 BODY_JOINTS: tuple[int, ...] = tuple(j for j in range(NUM_JOINTS) if j not in HAND_JOINTS)
 BODY_JOINT_NAMES: tuple[str, ...] = tuple(JOINT_NAMES[j] for j in BODY_JOINTS)
+
+#: The four joints a reduced pose does not store per frame (primer section 5): the two lumbar
+#: joints and the two clavicles, which carry almost no motion in most capture and which several
+#: sources do not drive at all. Each becomes one constant per subject, fitted by ``smpl18.reduce``.
+FROZEN_JOINTS: tuple[int, ...] = (3, 6, 13, 14)
+FROZEN_JOINT_NAMES: tuple[str, ...] = tuple(JOINT_NAMES[j] for j in FROZEN_JOINTS)
+
+#: The kept joint just below each frozen one, which takes over its rotation. Freezing a joint
+#: would turn the whole chain below it; the absorber undoes exactly that, so no distal world
+#: orientation changes. ``spine3`` absorbs both lumbar joints because both sit above it.
+ABSORBERS: Mapping[int, int] = MappingProxyType({3: 9, 6: 9, 13: 16, 14: 17})
+
+#: Dropped outright rather than frozen: the hands are not stored at all.
+DROPPED_JOINTS: tuple[int, ...] = HAND_JOINTS
+
+#: The 18 joints a reduced pose stores, in ascending index order.
+KEEP18: tuple[int, ...] = tuple(
+    j for j in range(NUM_JOINTS) if j not in FROZEN_JOINTS and j not in DROPPED_JOINTS
+)
+JOINT18_NAMES: tuple[str, ...] = tuple(JOINT_NAMES[j] for j in KEEP18)
+
+
+def _below_a_frozen_joint(joint: int) -> bool:
+    node = PARENTS[joint]
+    while node >= 0:
+        if node in FROZEN_JOINTS:
+            return True
+        node = PARENTS[node]
+    return False
+
+
+#: The kept joints a constant can move. Absorbing keeps every world orientation exact whatever
+#: the constants are, but a frozen joint sits between two segments, so a constant that differs
+#: from the joint's real rotation displaces everything below it; these joints pay that cost and
+#: are what the constants are fitted against.
+AFFECTED_BY_FREEZE: tuple[int, ...] = tuple(j for j in KEEP18 if _below_a_frozen_joint(j))
 
 #: Major segments as (name, proximal joint, distal joint). The trunk spans pelvis to spine3
 #: as one segment; the hands are not segments.
@@ -92,3 +138,6 @@ def index_of(name: str) -> int:
 assert len(JOINT_NAMES) == NUM_JOINTS and len(PARENTS) == NUM_JOINTS
 assert PARENTS[ROOT] == -1 and all(0 <= PARENTS[j] < j for j in range(1, NUM_JOINTS))
 assert len(set(JOINT_NAMES)) == NUM_JOINTS
+assert len(KEEP18) == 18 and list(KEEP18) == sorted(KEEP18)
+assert not set(KEEP18) & (set(FROZEN_JOINTS) | set(DROPPED_JOINTS))
+assert set(ABSORBERS) == set(FROZEN_JOINTS) and set(ABSORBERS.values()) <= set(KEEP18)

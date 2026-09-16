@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from smpl24.formats import npz
+from smpl18.formats import npz
 
 
 def test_every_array_comes_back_by_its_key(tmp_path):

@@ -9,8 +9,8 @@ import pathlib
 import pytest
 import yaml
 
-from smpl24.cli import main
-from smpl24.profile import Profile
+from smpl18.cli import main
+from smpl18.profile import Profile
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[2]
 SHIPPED = sorted((PACKAGE / "configs" / "profiles").glob("*.yaml"))
@@ -52,4 +52,4 @@ def test_shipped_settings_cite_their_source_and_carry_no_dataset_defaults_in_cod
     for entry in profile.referenced_files():
         if entry.role.startswith("settings"):
             loaded = yaml.safe_load(entry.path.read_text(encoding="utf-8"))
-            assert loaded["schema"] == "smpl24_settings_v1"
+            assert loaded["schema"] == "smpl18_settings_v1"

@@ -1,8 +1,14 @@
-# smpl24
+# smpl18
 
-Convert motion capture into an **SMPL-24 pose corpus**: one body shape per subject, one
-axis-angle pose sequence per trial on the 24-joint SMPL skeleton, with a record of where every
-joint's motion came from.
+Convert motion capture into an **18-joint reduced-model pose corpus**: one body shape per
+subject, one axis-angle pose sequence per trial on the SMPL skeleton reduced to 18 joints, with
+a record of where every joint's motion came from.
+
+The conversion passes through the full 24-joint SMPL pose and then freezes four joints
+(`spine1`, `spine2`, both collars) to per-subject constants and drops the two hand joints. The
+constants are not guessed: they are fitted to minimise the joint-centre error the freeze causes,
+and the corpus records that error. Segment world orientations survive the reduction exactly. See
+[`docs/primer.md`](docs/primer.md) section 5.
 
 The package is organised by **what a source observes** and **how it is stored**, never by which
 dataset it is. A dataset is a *profile*: a YAML file that binds a source kind and a file format
@@ -36,10 +42,10 @@ The repository contains no body-model files and no motion data; see
 Python 3.12 or newer.
 
 ```bash
-git clone https://github.com/JeongHyunho/smpl24.git
-cd smpl24
+git clone https://github.com/JeongHyunho/smpl18.git
+cd smpl18
 python -m pip install -e ".[dev]"
-smpl24 --version
+smpl18 --version
 ```
 
 `.c3d` reading uses `ezc3d`, installed as a regular dependency.
@@ -51,41 +57,41 @@ SMPL is licensed by the Max Planck Institute and is **not redistributed here**. 
 package needs into a licence-free `.npz` per gender:
 
 ```bash
-smpl24 extract-model --pkl path/to/basicmodel_m_lbs_10_207_0_v1.1.0.pkl --gender male   --out ~/smpl24-models
-smpl24 extract-model --pkl path/to/basicmodel_f_lbs_10_207_0_v1.1.0.pkl --gender female --out ~/smpl24-models
-smpl24 extract-model --pkl path/to/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --gender neutral --out ~/smpl24-models
+smpl18 extract-model --pkl path/to/basicmodel_m_lbs_10_207_0_v1.1.0.pkl --gender male   --out ~/smpl18-models
+smpl18 extract-model --pkl path/to/basicmodel_f_lbs_10_207_0_v1.1.0.pkl --gender female --out ~/smpl18-models
+smpl18 extract-model --pkl path/to/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --gender neutral --out ~/smpl18-models
 ```
 
 The extractor never executes pickle code: it uses a whitelisting unpickler and writes only
 `v_template`, `shapedirs`, `J_regressor`, `kintree_parents` (and `weights`, `posedirs`, `faces`
-when a mesh is wanted). Point the tools at the directory with `--models` or `SMPL24_MODELS`.
+when a mesh is wanted). Point the tools at the directory with `--models` or `SMPL18_MODELS`.
 
 ### 3. Convert a dataset through its profile
 
 ```bash
 # Look at what a profile binds, and check it against the schema
-smpl24 profile show     configs/profiles/addbiomechanics.yaml
-smpl24 profile validate configs/profiles/gaitex.yaml
+smpl18 profile show     configs/profiles/addbiomechanics.yaml
+smpl18 profile validate configs/profiles/gaitex.yaml
 
 # Convert: the profile says which kind and format the dataset is, how its files are laid out,
 # which field means what, and which correspondence, repairs and settings apply
-smpl24 convert --profile configs/profiles/addbiomechanics.yaml --input /data/addbiomechanics \
-    --models ~/smpl24-models --out corpus/addbiomechanics
+smpl18 convert --profile configs/profiles/addbiomechanics.yaml --input /data/addbiomechanics \
+    --models ~/smpl18-models --out corpus/addbiomechanics
 
-smpl24 convert --profile configs/profiles/gaitex.yaml --input /data/gaitex \
-    --models ~/smpl24-models --out corpus/gaitex
+smpl18 convert --profile configs/profiles/gaitex.yaml --input /data/gaitex \
+    --models ~/smpl18-models --out corpus/gaitex
 
-smpl24 convert --profile configs/profiles/amass.yaml --input /data/amass \
-    --models ~/smpl24-models --out corpus/amass
+smpl18 convert --profile configs/profiles/amass.yaml --input /data/amass \
+    --models ~/smpl18-models --out corpus/amass
 
 # A dataset whose profile is not in this repository: point SHARED_DATASET_PATH at the drive that
 # holds it, then name the profile.
 export SHARED_DATASET_PATH=/mnt/shared/datasets      # or set it in the environment once
-smpl24 convert --profile <name> --input /data/<dataset> --models ~/smpl24-models --out corpus/<name>
+smpl18 convert --profile <name> --input /data/<dataset> --models ~/smpl18-models --out corpus/<name>
 ```
 
 A profile name resolves in this order: an existing path as given; `configs/profiles/<name>.yaml`
-in this package; `$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`. Values inside a profile may
+in this package; `$SHARED_DATASET_PATH/smpl18/profiles/<name>.yaml`. Values inside a profile may
 use `${SHARED_DATASET_PATH}`, and relative paths resolve against the profile's own directory, so a
 profile published on the shared drive finds its correspondence and settings files beside it.
 
@@ -96,33 +102,33 @@ Every converter writes the same corpus layout (see [Corpus format](#corpus-forma
 For ad hoc use, name the kind and format on the command line; the same generic code runs.
 
 ```bash
-# SMPL-H parameters in an npz: trim to 24 joints, fix the up axis, resample
-smpl24 convert --kind smpl_parameters --format npz --up-axis z --fps 100 \
-    --input motion.npz --models ~/smpl24-models --out corpus/adhoc
+# SMPL-H parameters in an npz: trim to the body joints, fix the up axis, resample, reduce
+smpl18 convert --kind smpl_parameters --format npz --up-axis z --fps 100 \
+    --input motion.npz --models ~/smpl18-models --out corpus/adhoc
 
 # An OpenSim skeleton with an inverse-kinematics result
-smpl24 convert --kind skeleton_motion --format osim_mot --osim model.osim --mot ik.mot \
+smpl18 convert --kind skeleton_motion --format osim_mot --osim model.osim --mot ik.mot \
     --correspondence configs/correspondence/opensim_rajagopal.yaml --gender female \
-    --settings configs/settings/default.yaml --models ~/smpl24-models --out corpus/adhoc
+    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
 
 # Labelled markers: joint centres by a marker-set description, then position IK
-smpl24 convert --kind marker_trajectories --format trc --input trial.trc --static static.trc \
+smpl18 convert --kind marker_trajectories --format trc --input trial.trc --static static.trc \
     --markerset configs/markersets/plug_in_gait.yaml --gender male \
-    --settings configs/settings/default.yaml --models ~/smpl24-models --out corpus/adhoc
+    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
 
 # An animation skeleton with a joint map
-smpl24 convert --kind skeleton_motion --format bvh --input clip.bvh \
+smpl18 convert --kind skeleton_motion --format bvh --input clip.bvh \
     --correspondence configs/correspondence/bvh_mixamo.yaml \
-    --settings configs/settings/default.yaml --models ~/smpl24-models --out corpus/adhoc
+    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
 
 # FBX goes through Blender (external, not bundled): FBX -> BVH -> convert
-smpl24 fbx2bvh --input clip.fbx --blender "C:/Program Files/Blender/blender.exe" --out clip.bvh
+smpl18 fbx2bvh --input clip.fbx --blender "C:/Program Files/Blender/blender.exe" --out clip.bvh
 ```
 
 **What FBX is, and why it goes through Blender.** FBX is Autodesk's binary interchange format
 for 3D scenes and skeletal animation, common in game and animation pipelines. Reading it needs
 the proprietary Autodesk SDK or a reimplementation; Blender (free) imports FBX and exports BVH,
-which this package reads natively. `smpl24 fbx2bvh` drives a Blender you already have installed.
+which this package reads natively. `smpl18 fbx2bvh` drives a Blender you already have installed.
 
 Numeric limits (filter cut-offs, joint-rate limits, IK weights, gap lengths) are never defaulted
 inside the library. A profile points at a settings file; ad hoc runs pass `--settings`. The
@@ -131,21 +137,21 @@ values used are copied into every trial manifest.
 ### 5. Inspect and validate
 
 ```bash
-smpl24 info corpus/gaitex                    # subjects, trials, frames, provenance summary
-smpl24 validate corpus/gaitex                # forward-kinematics reproduction, bone-length residuals
-smpl24 validate corpus/adhoc --against trial.trc   # compare FK joints with the source observations
+smpl18 info corpus/gaitex                    # subjects, trials, frames, provenance summary
+smpl18 validate corpus/gaitex                # forward-kinematics reproduction, bone-length residuals
+smpl18 validate corpus/adhoc --against trial.trc   # compare FK joints with the source observations
 ```
 
 ### 6. Use from Python
 
 ```python
-from smpl24 import Model, Skeleton
-from smpl24.profile import Profile
-from smpl24.convert import convert_subject
-from smpl24.corpus import read_corpus
+from smpl18 import Model, Skeleton
+from smpl18.profile import Profile
+from smpl18.convert import convert_subject
+from smpl18.corpus import read_corpus
 
 profile = Profile.load("configs/profiles/gaitex.yaml")          # validated; referenced files hashed
-model_root = "~/smpl24-models"
+model_root = "~/smpl18-models"
 
 for subject in profile.layout.subjects("/data/gaitex"):           # discovery from the profile's layout
     convert_subject(profile, subject, models=model_root, out="corpus/gaitex")
@@ -153,15 +159,15 @@ for subject in profile.layout.subjects("/data/gaitex"):           # discovery fr
 corpus = read_corpus("corpus/gaitex")
 trial = corpus.subject("S03").trial("walk_01")
 skel = Skeleton(Model.for_gender(trial.gender, root=model_root), trial.betas)
-joints_world = skel.fk(trial.poses, trial.trans)                  # [T, 24, 3]
+joints_world = skel.fk(trial.poses_24(), trial.trans)             # [T, 24, 3], the freeze undone
 ```
 
 The generic layers are usable on their own:
 
 ```python
-from smpl24.formats import osim, mot
-from smpl24.sources.skeleton import OpenSimSkeleton
-from smpl24.fit import fit_shape, Correspondence, transfer_segment_rotations
+from smpl18.formats import osim, mot
+from smpl18.sources.skeleton import OpenSimSkeleton
+from smpl18.fit import fit_shape, Correspondence, transfer_segment_rotations
 
 skeleton = OpenSimSkeleton(osim.read("model.osim"))
 motion = skeleton.motion(mot.read("ik.mot"))                       # segment rotations per frame
@@ -177,7 +183,7 @@ pose = transfer_segment_rotations(model, shape, motion, corr, settings=pose_sett
 A profile is the only place a dataset is named. In outline:
 
 ```yaml
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: addbiomechanics
 source_kind: skeleton_motion
 format: b3d
@@ -201,7 +207,7 @@ The loader refuses unknown keys, resolves relative paths against the profile, an
 referenced file into the corpus manifests.
 
 Public datasets' profiles ship here as examples. Internal datasets' profiles are authored in the
-consuming project and published to the shared drive under `smpl24/`, mirroring this package's
+consuming project and published to the shared drive under `smpl18/`, mirroring this package's
 `configs/` layout (`profiles/`, `correspondence/`, `markersets/`, `offsets/`, `settings/`); the
 `SHARED_DATASET_PATH` environment variable names that drive.
 
@@ -213,9 +219,11 @@ consuming project and published to the shared drive under `smpl24/`, mirroring t
 corpus/
   SUMMARY.json                 counts, converter version, profile id + hash, settings hash
   <subject>/
-    subject.json               gender, model file + sha256, betas, optional per-bone scale, fit residuals
-    <trial>.npz                poses [T,24,3] axis-angle, trans [T,3], fps, up_axis,
-                               joint_provenance [24] (measured | derived | absent), frame_valid [T]
+    subject.json               gender, model file + sha256, betas, optional per-bone scale, fit
+                               residuals, and the reduced model: the four frozen constants, what
+                               absorbed them, and what the freeze cost
+    <trial>.npz                poses [T,18,3] axis-angle, joint_names [18], trans [T,3], fps,
+                               up_axis, joint_provenance [18], frame_valid [T]
     <trial>.manifest.json      source files + sha256, converter version and commit, profile id + hash,
                                correspondence id, repairs applied, discontinuity flags, settings used
 ```
@@ -243,5 +251,5 @@ ruff check src tests
 ```
 
 Tests are pure-Python fixtures; nothing needs the body models or motion data. Integration checks
-that do need them are skipped unless `SMPL24_MODELS` points at an extracted model set. A test
+that do need them are skipped unless `SMPL18_MODELS` points at an extracted model set. A test
 greps `src/` for profile ids so that no dataset name can creep back into code.

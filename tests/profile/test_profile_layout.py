@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from smpl24.profile.layout import Layout, LayoutError, compile_pattern
+from smpl18.profile.layout import Layout, LayoutError, compile_pattern
 
 
 def touch(path: pathlib.Path, content: bytes = b"x") -> pathlib.Path:

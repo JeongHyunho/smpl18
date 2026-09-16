@@ -2,9 +2,9 @@
 
 **What it observes.** An articulated skeleton (named bodies in a tree, joints between them,
 rest transforms, a set of independent coordinates) and, per frame, the values of those
-coordinates. The skeleton is a `smpl24.sources.SkeletonModel` (OpenSim-style custom joints
+coordinates. The skeleton is a `smpl18.sources.SkeletonModel` (OpenSim-style custom joints
 with coupled coordinates, or a BVH offset hierarchy); the trial is a
-`smpl24.sources.SkeletonMotion`, whose `placed()` runs the model's forward kinematics and
+`smpl18.sources.SkeletonMotion`, whose `placed()` runs the model's forward kinematics and
 returns world rotations and origins per body and joint centres per joint.
 
 **How it becomes SMPL-24.** Shape: bone lengths are measured between the source's joint
@@ -17,6 +17,12 @@ child offsets; the trunk's single rotation is distributed over the three spine j
 the source lacks are welded (identity) and marked `absent`. Provenance is `measured` for a
 joint whose source joint the model declares and, if `provenance.restrict_to_driven` is set,
 whose body was actually observed.
+
+**Then the reduction.** Whatever the kind, the 24-joint pose is reduced to the 18 joints the
+corpus stores: four joints frozen to fitted per-subject constants, the two hands dropped,
+orientations preserved exactly (`primer.md` section 5). A joint the source did not drive keeps
+its provenance through the reduction, and a frozen joint's provenance is recorded with the
+constants rather than per trial.
 
 **Formats.** `b3d` (a container with the model, several processing passes and subject
 fields), `osim_mot` (a model file, a coordinate file, optionally a marker file and a metadata

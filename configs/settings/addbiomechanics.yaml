@@ -1,6 +1,6 @@
 # Numbers the AddBiomechanics conversion sets for itself, layered over default.yaml by the
 # profile's settings list. They are the ones the reference conversion of 2026-09-15 ran with.
-schema: smpl24_settings_v1
+schema: smpl18_settings_v1
 id: addbiomechanics
 
 shape_fit:

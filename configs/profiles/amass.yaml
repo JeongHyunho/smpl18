@@ -4,7 +4,7 @@
 # This profile reproduces the reference AMASS conversion of 2026-09-15: the 22 body joints taken
 # from the stored SMPL-H poses, betas truncated to ten, and every sequence resampled to 100 Hz.
 # Every value below says what it means for this dataset.
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: amass
 description: AMASS SMPL-H sequences (*_poses.npz) under sub-dataset directories
 source_kind: smpl_parameters

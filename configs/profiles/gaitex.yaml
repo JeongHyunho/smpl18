@@ -5,7 +5,7 @@
 # This profile reproduces the reference GAITEX conversion of 2026-09-15: shape pooled per subject,
 # the frozen pelvis translation recovered from markers, and provenance limited to the bodies each
 # trial's metadata declares driven. Every value below says what it means for this dataset.
-schema: smpl24_profile_v1
+schema: smpl18_profile_v1
 id: gaitex
 description: GAITEX subject/condition trials (scaled OpenSim model + IMU-driven IK + markers)
 source_kind: skeleton_motion

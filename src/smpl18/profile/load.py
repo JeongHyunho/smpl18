@@ -5,12 +5,12 @@ Resolution order for ``Profile.load(name_or_path)``:
 
 1. an existing path, as given;
 2. ``<package>/configs/profiles/<name>.yaml`` (the examples shipped with the source tree);
-3. ``$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`` (profiles a project publishes to its
+3. ``$SHARED_DATASET_PATH/smpl18/profiles/<name>.yaml`` (profiles a project publishes to its
    shared drive).
 
 Files a profile references (correspondence, marker set, landmark offsets, settings) resolve in
 the same spirit: an absolute path; relative to the profile's own directory; relative to the
-package ``configs/`` directory; relative to ``$SHARED_DATASET_PATH/smpl24/``. Every resolved
+package ``configs/`` directory; relative to ``$SHARED_DATASET_PATH/smpl18/``. Every resolved
 file is hashed so the corpus manifests can say exactly which data produced them.
 """
 
@@ -26,9 +26,9 @@ from typing import Any
 
 import yaml
 
-from smpl24.profile.layout import Layout
-from smpl24.profile.schema import ProfileSchemaError, validate_profile
-from smpl24.sources.base import Format, SourceKind
+from smpl18.profile.layout import Layout
+from smpl18.profile.schema import ProfileSchemaError, validate_profile
+from smpl18.sources.base import Format, SourceKind
 
 __all__ = [
     "SHARED_ENV",
@@ -46,7 +46,7 @@ __all__ = [
 ]
 
 SHARED_ENV = "SHARED_DATASET_PATH"
-_SHARED_SUBDIR = "smpl24"
+_SHARED_SUBDIR = "smpl18"
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -73,7 +73,7 @@ def package_configs_dir() -> pathlib.Path | None:
 
 
 def shared_configs_dir(*, required: bool = False) -> pathlib.Path | None:
-    """``$SHARED_DATASET_PATH/smpl24``, or ``None`` when the variable is unset."""
+    """``$SHARED_DATASET_PATH/smpl18``, or ``None`` when the variable is unset."""
     value = os.environ.get(SHARED_ENV)
     if not value:
         if required:

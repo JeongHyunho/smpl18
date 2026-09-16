@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import scipy.sparse
 
-from smpl24.skeleton.definition import PARENTS
+from smpl18.skeleton.definition import PARENTS
 
 VERTICES = 30
 POSE_FEATURES = 23 * 9

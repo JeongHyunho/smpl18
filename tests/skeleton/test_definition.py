@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from smpl24.skeleton import definition as d
+from smpl18.skeleton import definition as d
 
 PRIMER = Path(__file__).resolve().parents[2] / "docs" / "primer.md"
 

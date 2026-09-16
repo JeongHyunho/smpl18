@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from smpl24.formats import FormatError, mot
+from smpl18.formats import FormatError, mot
 
 DT_S = 0.01
 FRAMES = 5

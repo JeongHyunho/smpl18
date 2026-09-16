@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from smpl24.model import (
+from smpl18.model import (
     ENV_MODELS,
     GENDERS,
     Model,
@@ -20,7 +20,7 @@ from smpl24.model import (
     set_hashes,
 )
 
-SOURCES = Path(__file__).resolve().parents[2] / "src" / "smpl24"
+SOURCES = Path(__file__).resolve().parents[2] / "src" / "smpl18"
 
 
 @pytest.fixture(autouse=True)

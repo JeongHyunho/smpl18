@@ -78,7 +78,7 @@ smpl24 convert --profile configs/profiles/amass.yaml --input /data/amass \
 
 # An internal dataset: its profile is not in this repository. Point SHARED_DATASET_PATH at the
 # shared drive where the project publishes internal profiles, then name the profile.
-export SHARED_DATASET_PATH=/mnt/shared/SOMA_AI_SharedData      # or set it in the environment once
+export SHARED_DATASET_PATH=/mnt/shared/datasets      # or set it in the environment once
 smpl24 convert --profile prism --input /data/prism --models ~/smpl24-models --out corpus/prism
 ```
 
@@ -116,6 +116,11 @@ smpl24 convert --kind skeleton_motion --format bvh --input clip.bvh \
 # FBX goes through Blender (external, not bundled): FBX -> BVH -> convert
 smpl24 fbx2bvh --input clip.fbx --blender "C:/Program Files/Blender/blender.exe" --out clip.bvh
 ```
+
+**What FBX is, and why it goes through Blender.** FBX is Autodesk's binary interchange format
+for 3D scenes and skeletal animation, common in game and animation pipelines. Reading it needs
+the proprietary Autodesk SDK or a reimplementation; Blender (free) imports FBX and exports BVH,
+which this package reads natively. `smpl24 fbx2bvh` drives a Blender you already have installed.
 
 Numeric limits (filter cut-offs, joint-rate limits, IK weights, gap lengths) are never defaulted
 inside the library. A profile points at a settings file; ad hoc runs pass `--settings`. The
@@ -224,8 +229,8 @@ itself (joint table, rest pose, frames, forward kinematics): [`docs/primer.md`](
   contains them, and the extracted `.npz` files must not be committed or shared.
 - Motion data is never stored in this repository either. Converters read from paths you give
   them and write only to `--out`.
-- The code is under the MIT licence (`LICENSE`). The licence governs distribution once the owner
-  publishes the repository; until then it stays INTERNAL-ONLY, as the parent project requires.
+- The code is under the MIT licence (`LICENSE`). The repository is private while the work is in
+  progress; the licence governs distribution once its owner publishes it.
 
 ## Development
 
@@ -238,16 +243,3 @@ ruff check src tests
 Tests are pure-Python fixtures; nothing needs the body models or motion data. Integration checks
 that do need them are skipped unless `SMPL24_MODELS` points at an extracted model set. A test
 greps `src/` for profile ids so that no dataset name can creep back into code.
-
-## Relationship to the SOMA Synthetic IMU project
-
-This package was carved out of that project's retarget engine so that the conversion to SMPL-24
-has one home with its own history and releases. The project consumes it as a git submodule and
-pins a commit; it authors its internal profiles in its own `configs/smpl24/` and publishes them
-to the shared drive that `SHARED_DATASET_PATH` names. The migration is staged in
-[`docs/plan.md`](docs/plan.md).
-
-**What FBX is, and why it goes through Blender.** FBX is Autodesk's binary interchange format for
-3D scenes and skeletal animation, common in game and animation pipelines. Reading it needs the
-proprietary Autodesk SDK or a reimplementation; Blender (free) imports FBX and exports BVH, which
-this package reads natively. `smpl24 fbx2bvh` drives a Blender you already have installed.

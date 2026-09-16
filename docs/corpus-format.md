@@ -4,7 +4,7 @@
 |---|---|
 | Format id | `smpl24_corpus` |
 | Version | `1.0` (draft; frozen at the 0.1.0 release) |
-| Lineage | generalises the `addbio_smpl24_raw` / `gaitex_smpl24_raw` artifacts of the SOMA project (`retarget-v2`), whose fields it keeps |
+| Shape | one directory per corpus, one file per trial, per-joint provenance beside the arrays; a reader needs no knowledge of the source |
 
 A corpus is a directory. Every converter writes this layout; every reader consumes it. Nothing in
 it is source-specific: the source is described, not assumed.

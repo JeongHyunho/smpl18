@@ -1,8 +1,7 @@
 """Every profile shipped in configs/profiles/ validates and every file it references exists.
 
-The project's internal profiles (kept in the parent repository's configs/smpl24/) are checked
-too when that directory is present beside the package, and skipped otherwise, because the
-package will live in its own repository.
+A profile kept outside this repository is the consumer's to check; the loader's resolution order
+is covered in test_profile_load.py.
 """
 
 import pathlib
@@ -15,7 +14,6 @@ from smpl24.profile import Profile
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[2]
 SHIPPED = sorted((PACKAGE / "configs" / "profiles").glob("*.yaml"))
-INTERNAL = sorted((PACKAGE.parents[1] / "configs" / "smpl24" / "profiles").glob("*.yaml"))
 
 
 def _ids(paths):
@@ -55,14 +53,3 @@ def test_shipped_settings_cite_their_source_and_carry_no_dataset_defaults_in_cod
         if entry.role.startswith("settings"):
             loaded = yaml.safe_load(entry.path.read_text(encoding="utf-8"))
             assert loaded["schema"] == "smpl24_settings_v1"
-
-
-@pytest.mark.skipif(not INTERNAL, reason="the parent project's configs/smpl24 is not beside the package")
-@pytest.mark.parametrize("path", INTERNAL, ids=_ids(INTERNAL))
-def test_internal_profile_validates_and_finds_the_package_settings(path: pathlib.Path) -> None:
-    profile = Profile.load(path)
-    assert profile.id == path.stem
-    roles = {entry.role: entry for entry in profile.referenced_files()}
-    assert roles["settings[0]"].path == (PACKAGE / "configs" / "settings" / "default.yaml").resolve()
-    for entry in profile.referenced_files():
-        assert entry.path.is_file(), f"{entry.role} -> {entry.path}"

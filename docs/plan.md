@@ -1,149 +1,81 @@
-# smpl24 — founding plan
+# smpl24 — design and roadmap
 
 | | |
 |---|---|
-| Written | 2026-09-15, in the SOMA Synthetic IMU repository, lane `worktree-smpl24-primer`; revised the same day for the "generic source kinds, datasets as configuration" principle |
-| Status | **Seed.** Phase 0 is in this change set; the later phases are proposals for the owner |
-| Decisions already taken by the owner | separate repository mounted as a git submodule of the SOMA project; first release covers SMPL-family parameters, OpenSim skeletons (`.osim`+`.mot`, `.b3d`), marker trajectories (`.trc`/`.c3d`) and BVH/FBX; the existing code **moves** here and the SOMA project depends on this package (single source); **no code path is written for a particular dataset** — the package implements source kinds and file formats, and a dataset is a configuration (profile) that binds them |
-| Language | English is the default for every document and message in this repository |
-| Authority | none over the SOMA project. This plan releases no hold, changes no contract, and authorises no generation there |
+| Status | in progress: formats, profiles, model and skeleton are in; the fitting, repair and corpus layers are next (§5) |
+| Last updated | 2026-09-16 |
+| Scope | this document states what the package is for, how it is arranged, and what remains. The skeleton itself is explained in [`primer.md`](primer.md); the on-disk result in [`corpus-format.md`](corpus-format.md); a profile field by field in [`profile-schema.md`](profile-schema.md) |
 
 ---
 
-## 0. Summary
+## 0. What this package is for
 
-The SOMA Synthetic IMU project already contains a working retarget engine
-(`src/soma_synthetic_imu/addbio_retarget/`, ten modules, 172 unit tests), a marker-centre
-retarget used for one cohort, and two copies of the SMPL model loader and forward kinematics.
-The engine is generic in its mathematics but dataset-shaped in its surface: modules are named
-after the dataset they were first written for, OpenSim body names and an AddBiomechanics landmark
-table sit in code, the trunk body is a constant, the body-model path is hardcoded twice, and each
-new dataset so far has meant a new driver script.
+Motion capture arrives in incompatible shapes: SMPL-family parameter files, articulated skeletons
+with joint angles, joint-centre trajectories, raw surface markers. Downstream work wants one
+representation. `smpl24` converts any of them into an **SMPL-24 pose corpus**: one body shape per
+subject, one axis-angle pose sequence per trial on the 24-joint SMPL skeleton, with a record of
+where every joint's motion came from.
 
-This plan carves that engine out into **`smpl24`**, an installable package built on one rule:
+One rule shapes the code:
 
 > **Code implements source kinds and file formats. A dataset is a profile.**
 
-A *source kind* is what the source observes (SMPL parameters, an articulated skeleton's joint
-angles, joint-centre trajectories, surface markers). A *format* is how it is stored (npz, pickle,
-`.osim`/`.mot`, `.b3d`, `.trc`, `.c3d`, `.bvh`, `.mat`). A *profile* is a YAML file that says
-which kind and format a dataset is, how its files are laid out, which field means what, its
-units and frame, its joint correspondence, its repairs, and its settings. AddBiomechanics,
-GAITEX, PRISM, AMASS and HKNU become five profiles over four kinds and seven formats; a sixth
-dataset is a sixth profile, not a sixth driver.
-
-The SOMA project keeps everything that is about *its* artifacts (attribution, holds, artifact
-classes, unified8 bundles, sensor synthesis) and consumes `smpl24` as a pinned submodule. The
-move happens in phases, each gated by parity: converting the same sample through the profile must
-reproduce the corpus the project generates today.
+A *source kind* is what the source observes. A *format* is how it is stored. A *profile* is a YAML
+file that says which kind and format a dataset is, how its files are laid out, which field means
+what, its units and frame, its joint correspondence, its repairs and its settings. Adding a dataset
+means writing a profile, never a module.
 
 ---
 
-## 1. What exists today (inventory, 2026-09-15)
-
-### 1.1 The engine, classified by what it really is
-
-| Today (SOMA project) | What it really is | Destination in `smpl24` |
-|---|---|---|
-| `addbio_retarget/osim_topology.py` | `.osim` XML reader (bodies, joints, parents, coordinates) | `formats/osim.py` |
-| `addbio_retarget/osim_kinematics.py` | forward kinematics of an OpenSim-style skeleton (custom joints, spline-coupled coordinates) without OpenSim | `sources/skeleton/opensim_fk.py` — a *skeleton model* implementation, dataset-free |
-| `addbio_retarget/b3d_frames.py` + vendored `SubjectOnDisk_pb2` | `.b3d` container reader (embedded `.osim` + passes + subject fields) | `formats/b3d.py` (+ `formats/_vendor/`) |
-| `gaitex_retarget/gaitex_frames.py` | `.mot` reader, `.trc` reader, and a *frozen-root recovery* mechanism | `formats/mot.py`, `formats/trc.py`; the recovery becomes `sources/skeleton/root_recovery.py` switched on by profile |
-| `addbio_retarget/smpl_correspondence.py` | SMPL-24 names/parents **plus** an OpenSim joint-name table and a root-translation coordinate list | skeleton definition → `skeleton/definition.py`; the naming table → **data**, `configs/correspondence/opensim_*.yaml` |
-| `addbio_retarget/shape_fit.py` | betas from bone lengths, rest-joint rescale, stature/volume terms, model selection by gender, **and** `LANDMARK_OFFSETS_V1` (an AddBiomechanics-vs-SMPL landmark correction) | `fit/shape.py`, `model/select.py`; the landmark table → **data**, `configs/offsets/`, referenced by a profile |
-| `addbio_retarget/pose_fit.py` | segment-rotation transfer `G_smpl[j] = R_world · G_source[body(j)] · A[j]`, root placement, **and** `_TRUNK_BODY = "torso"`, `_LUMBAR_SMPL = (3,6,9)` | `fit/pose_transfer.py`, `fit/root.py`; trunk body and lumbar split → **correspondence data** |
-| `addbio_retarget/world_frame.py` | change of up axis | `skeleton/frames.py` (any pair of axes) |
-| `addbio_retarget/wrap_repair.py` | unwrap-then-refilter named coordinates | `repair/wrap.py`; which coordinates and which filter → **profile** |
-| `gaitex_retarget/shape.py` | pool one body from per-trial scaled skeletons | `fit/shape.py` (`pool_skeletons`), switched on by profile |
-| `gaitex_retarget/provenance.py` | demote joints nothing observed | `fit/correspondence.py` (`restrict_to_driven`); the driven set → **profile** |
-| `gaitex_retarget/joint_ranges.py` | fraction of a trial outside declared joint ranges | `validate/joint_ranges.py`; the ranges → **settings** |
-| `kinematics/quaternion.py`, `kinematics/rigid_body.py` | rotation algebra, Kabsch with reflection correction | `skeleton/rotations.py` |
-| `scripts/poc/anthro_smpl.py` (`rest_joints`, FK, batch FK, model path by gender) | SMPL rest skeleton and FK | `skeleton/kinematics.py`, `model/` |
-| `scripts/poc/smpl_model.py`, `prepare_smpl_clean_npz.py` | two fail-closed pkl → clean-npz extractors | merged into `model/extract.py` |
-| `scripts/diagnostics/hknu_retarget_probe.py` (`centres_from`, `rescale_rest_to_measured`, `root_placement_from`, `CORRESPONDENCE`, `TRUNK_ALIAS`) | the *joint-centres* source kind: centres from a Visual3D `.mat`, shape by measured bone lengths, root from the pelvis centre; plus a naming table and an alias | `formats/mat.py`, `sources/centres/`, `fit/shape.py`, `fit/root.py`; the table and alias → **data** |
-| `scripts/poc/generate_amass_faithful.py` (`build_pose24`, `resample_trans`, per-joint slerp, per-sub-dataset fps fallback) | the *SMPL-parameters* source kind from npz; a fps fallback table | `sources/parameters/`, `repair/resample.py`; the fps table → **profile** |
-| `scripts/poc/generate_prism_faithful.py` (parameter reading from PRISM pickles, gender from `subj_info`) | the *SMPL-parameters* source kind from a pickle container | `formats/pickle.py` (whitelisting unpickler), bindings → **profile** |
-| `scripts/poc/generate_addbio_smpl24.py`, `generate_gaitex_smpl24.py` (six-step drivers, study/subject/trial discovery, skip rules) | orchestration + layout + skip policy | `cli.py convert --profile`; layout and skip rules → **profile** |
-| tests: `tests/addbio_retarget/*` (172), the GAITEX reader/provenance/shape/joint-range/cluster-pose tests, `tests/poc/test_{anthro_smpl,smpl_model,prepare_smpl_clean_npz}.py` | | move with their code; dataset-specific expectations become profile-driven fixtures |
-
-### 1.2 What stays in the SOMA project
-
-- `addbio_retarget/attribution.py` (closed study table, licence fields), `artifact.py`
-  (`spec_id = addbio_smpl24_raw`), artifact classes, holds, the experimental catalog: these
-  describe the project's artifacts, not the conversion.
-- Unified8 bundle emitters, sensor synthesis (`sensors/`, `gaitex_synthesis/`, `virtual_imu`),
-  the anthro deliverable assembly (`compute_anthro`), the validator, the pipeline runner.
-- `source_parsing/adapters/addbiomechanics.py` (the audit-lane B3D decoder coupled to governance).
-- The project's own profiles for internal datasets (PRISM, HKNU) may live in the project's
-  `configs/` and be passed by path; public-dataset profiles ship as examples in `smpl24`.
-
-### 1.3 Facts that shape the design
-
-- **One shared call.** All five SOMA generators reach the body model through
-  `clean_model_path_for_gender`. `Model.for_gender` preserves it.
-- **Model location is hardcoded twice** with different environment overrides. `smpl24` has one
-  resolver (`--models` / `SMPL24_MODELS`) and no default path.
-- **No thresholds hide in code.** The project forbids code-default tolerances. `smpl24` keeps the
-  rule: numeric limits come from settings referenced by the profile, and are copied into every
-  trial manifest.
-- **No nimblephysics, no OpenSim dependency**: both are reimplemented in numpy/scipy. `smpl24`
-  inherits that: numpy, scipy, protobuf, pyyaml.
-- **No BVH/FBX code exists** (new work, phase 4).
-- **`code_hash()` in the drivers hashes nine files by repository path** — replaced by the
-  installed version plus the submodule commit, recorded by the project's run record.
-
----
-
-## 2. Goals and non-goals
+## 1. Goals and non-goals
 
 **Goals**
 
 1. Generic source kinds and formats, each implemented once, tested on synthetic fixtures.
-2. Datasets as profiles: AddBiomechanics, GAITEX, PRISM, AMASS and HKNU expressed entirely as
-   YAML over the generic code, validated against a schema. Adding a dataset never adds a module.
-3. One corpus format with per-joint provenance (`measured` / `derived` / `absent`), fit
-   residuals, and the profile and settings that produced it.
-4. Bit-for-bit reproduction of the corpora the SOMA project generates today, through profiles,
-   before any behaviour changes.
-5. The body model handled honestly: per subject by gender, located explicitly, hashed, never bundled.
-6. English documentation with a quick start a new user can follow in ten minutes.
+2. Datasets as profiles, validated against a schema.
+3. One corpus format with per-joint provenance (`measured` / `derived` / `absent`), fit residuals,
+   and the profile and settings that produced it.
+4. The body model handled honestly: selected per subject by gender, located explicitly, hashed,
+   never bundled.
+5. Documentation with a quick start a new user can follow in ten minutes.
 
 **Non-goals**
 
-- Sensor synthesis, bundle formats, dataset attribution, governance holds (SOMA project).
-- Mesh-level (marker-to-vertex) fitting in 0.1; markers go through joint centres first (§4.3).
-- A public release; INTERNAL-ONLY until the owner decides otherwise (§7).
+- Sensor synthesis, dataset-specific bundle formats, and dataset licensing or governance: a
+  consumer's concern, not this package's.
+- Mesh-level (marker-to-vertex) fitting in 0.1; marker input goes through joint centres first (§4.3).
+- Anything that reads or writes body-model files or motion data inside this repository.
 
 ---
 
-## 3. Repository shape
+## 2. Repository shape
 
 ```
 smpl24/
-├── README.md  CHANGELOG.md  LICENSE (owner decision)  pyproject.toml
+├── README.md  CHANGELOG.md  LICENSE  pyproject.toml
 ├── docs/
 │   ├── plan.md               this document
 │   ├── primer.md             SMPL-24 and how to reach it from SMPL or markers
 │   ├── corpus-format.md      the on-disk corpus, versioned
 │   ├── profile-schema.md     what a profile may say, field by field
-│   └── kinds/                one page per source kind (parameters, skeleton, centres, markers)
+│   └── kinds/                one page per source kind
 ├── configs/                  DATA, never code
-│   ├── profiles/             addbiomechanics.yaml  gaitex.yaml  amass.yaml  prism.yaml  hknu.yaml  (examples)
+│   ├── profiles/             one file per dataset
 │   ├── correspondence/       source joint/body names -> SMPL-24 joints, fill rules, trunk body, lumbar split
 │   ├── markersets/           marker labels -> joint-centre rules
-│   ├── offsets/              landmark offset tables (e.g. the AddBiomechanics-vs-SMPL table)
+│   ├── offsets/              landmark offset tables
 │   └── settings/             filter cut-offs, joint-rate limits, IK weights, joint ranges
 ├── src/smpl24/
 │   ├── __init__.py  cli.py
 │   ├── model/        extract.py  load.py  select.py
 │   ├── skeleton/     definition.py  rotations.py  kinematics.py  frames.py
-│   ├── formats/      npz.py  pickle.py  json.py  osim.py  mot.py  trc.py  c3d.py  b3d.py  bvh.py  mat.py  _vendor/
+│   ├── formats/      npz.py  pickle_safe.py  jsonfile.py  osim.py  mot.py  trc.py  c3d.py  b3d.py  bvh.py  mat.py  _vendor/
 │   ├── sources/      base.py (the four kind dataclasses)
-│   │   ├── parameters/   from_tables.py                       SMPL-family parameter streams
-│   │   ├── skeleton/     model.py  opensim_fk.py  bvh_fk.py  root_recovery.py   articulated-skeleton motion
-│   │   ├── centres/      from_tables.py                       joint-centre trajectories
-│   │   └── markers/      conditioning.py  centres.py          surface markers -> joint centres
-│   ├── profile/      schema.py  load.py  bind.py  layout.py   profile parsing, validation, field binding, file discovery
+│   │   ├── parameters/   SMPL-family parameter streams
+│   │   ├── skeleton/     articulated-skeleton motion (OpenSim-style and BVH-style FK)
+│   │   ├── centres/      joint-centre trajectories
+│   │   └── markers/      surface markers -> joint centres
+│   ├── profile/      schema.py  load.py  bind.py  layout.py
 │   ├── fit/          shape.py  correspondence.py  pose_transfer.py  pose_ik.py  root.py
 │   ├── repair/       wrap.py  resample.py  discontinuity.py
 │   ├── corpus/       schema.py  write.py  read.py  summary.py
@@ -154,37 +86,38 @@ smpl24/
 
 The dependency direction is fixed: `formats` know nothing about kinds; `sources` know nothing
 about datasets; `fit`/`repair`/`corpus` know nothing about formats; `profile` binds them; only
-`convert` and `cli` see the whole picture. No module imports a profile by name.
+`convert` and `cli` see the whole picture. No module imports a profile by name, and a test greps
+`src/` for the shipped profile ids so that no dataset name can creep into code.
 
 ---
 
-## 4. Design
+## 3. Design
 
-### 4.1 Source kinds (`smpl24.sources`)
+### 3.1 Source kinds (`smpl24.sources`)
 
-| Kind | Observes | Dataclass fields | Converter |
+| Kind | Observes | Data | Converter |
 |---|---|---|---|
 | `smpl_parameters` | SMPL-family `poses`, `betas`, `trans`, gender, fps | per trial: poses `[T, J, 3]` (J = 24/52/55), trans, fps, up axis; per subject: betas, gender | trim to 24 (hands identity), betas to model width, frame change, resample |
-| `skeleton_motion` | an articulated skeleton (bodies, joints, parents, rest transforms) and its joint angles per frame | `SkeletonModel` + `[T]` coordinate values → segment world rotations/positions by the model's FK | shape from FK bone lengths; pose by segment-rotation transfer with a calibration alignment |
+| `skeleton_motion` | an articulated skeleton (bodies, joints, parents, rest transforms) and its joint angles per frame | `SkeletonModel` + `[T]` coordinate values → segment world rotations and positions by the model's own forward kinematics | shape from bone lengths; pose by segment-rotation transfer with a calibration alignment |
 | `joint_centres` | world positions of anatomical joint centres per frame | `[T, K, 3]` with K named centres, validity mask | shape from bone lengths; pose by position IK; root from the pelvis centre |
 | `marker_trajectories` | labelled surface markers per frame | `[T, M, 3]` with labels, validity mask | marker set → joint centres → the `joint_centres` converter |
 
-Skeleton models are themselves generic: `opensim_fk` (custom joints, coupled coordinates, as
-today's `osim_kinematics`) and `bvh_fk` (offset hierarchy with Euler channels). FBX is not a
-skeleton model here: an external Blender step exports BVH (§4.4).
+Skeleton models are themselves generic: an OpenSim-style model (custom joints, spline-coupled
+coordinates) and a BVH-style one (offset hierarchy with Euler channels). FBX is not a skeleton
+model here: an external Blender step exports BVH, which this package reads.
 
-### 4.2 Formats (`smpl24.formats`)
+### 3.2 Formats (`smpl24.formats`)
 
-Readers return **tables with the file's own names** and never interpret them: `npz` and
-`pickle` (whitelisting unpickler, no code execution) return arrays by key; `json` returns
-objects; `osim` returns a skeleton description; `mot`/`sto` return columns; `trc` and `c3d`
-return labelled trajectories with rates and units; `b3d` returns the embedded `.osim`, the
-passes, and the subject fields; `bvh` returns hierarchy plus channels; `mat` returns variables.
-A format has no idea which dataset it serves.
+Readers return **tables with the file's own names** and never interpret them: `npz` and the
+whitelisting pickle reader (no code execution) return arrays by key; JSON returns objects; `osim`
+returns a skeleton description; `mot`/`sto` return columns; `trc` and `c3d` return labelled
+trajectories with rates and units; `b3d` returns the embedded `.osim`, the processing passes and
+the subject fields as stored; `bvh` returns hierarchy plus channels; `mat` returns variables. A
+format has no idea which dataset it serves, and it converts no units and no frames.
 
-### 4.3 Profiles (`smpl24.profile`)
+### 3.3 Profiles (`smpl24.profile`)
 
-A profile is the *only* place a dataset appears. Schema (`smpl24_profile_v1`), in outline:
+A profile is the only place a dataset appears. Schema `smpl24_profile_v1`, in outline:
 
 ```yaml
 schema: smpl24_profile_v1
@@ -200,202 +133,135 @@ bindings:                    # which field means what, in the file's own names
   root_translation: [<coordinate names>]
   frames: {pass: <name>, fallback: <name>}
 conventions: {up_axis: y|z, length_unit: m|mm, angle_unit: rad|deg}
-correspondence: configs/correspondence/<file>.yaml     # names -> SMPL joints, fill rules, trunk body, lumbar split, aliases
-markerset: configs/markersets/<file>.yaml              # marker_trajectories only
-shape: {method: bone_lengths, landmark_offsets: <file>|none, rescale_to_measured: bool, pool_per_subject: bool}
-root: {placement: pelvis_centre | source_translation | none, recover_frozen: bool}
+correspondence: ../correspondence/<file>.yaml   # names -> SMPL joints, fill rules, trunk body, lumbar split, aliases
+markerset: ../markersets/<file>.yaml            # marker_trajectories only
+shape: {method: bone_lengths | parameters, landmark_offsets: <file>|none, rescale_to_measured: ..., pool_per_subject: ...}
+root: {placement: pelvis_centre | source_translation | none, recover_frozen: ...}
 provenance: {restrict_to_driven: [<source joints>]}
 repairs:
   wrap: {coordinates: [...], filter: {order: ..., cutoff_hz: ...}}
   resample: {fps: ...}
   discontinuity: {settings_key: ...}
-skip: {trials_without: <pass name>, subjects_with_unresolved_gender: bool}
-settings: configs/settings/<file>.yaml
+skip: {trials_without: <pass name>, subjects_with_unresolved_gender: ...}
+settings: ../settings/<file>.yaml
 ```
 
-The loader validates the profile against the schema, refuses unknown keys, resolves relative
-paths against the profile's directory, and hashes every referenced file; the hashes go into the
-corpus manifests. `bind.py` turns a profile plus format tables into the kind's dataclass;
-`layout.py` discovers subjects and trials on disk.
+The loader refuses unknown keys and names the offending path, resolves a profile name as a path,
+then as a shipped example, then under `$SHARED_DATASET_PATH/smpl24/profiles/`, resolves relative
+references against the profile's own directory, substitutes `${SHARED_DATASET_PATH}` in values,
+and hashes every referenced file into the corpus manifests. `bind.py` turns a profile plus format
+tables into the kind's data; `layout.py` discovers subjects and trials on disk.
 
-### 4.4 How the five current datasets read as profiles
+Datasets that cannot be published keep their profiles outside this repository and are found
+through `SHARED_DATASET_PATH`, which mirrors the `configs/` layout.
 
-| Dataset | kind | format | What today's code hardcodes that becomes profile data |
+### 3.4 The shipped profiles
+
+| Dataset | kind | format | What the profile carries |
 |---|---|---|---|
-| AddBiomechanics | `skeleton_motion` | `b3d` | study/subject layout; `biological_sex` map with `unknown → neutral`; dynamics-pass-first with kinematics fallback; OpenSim naming table; `torso` as trunk body; lumbar split over spine1/2/3; landmark offsets v1; wrap repair on `pelvis_rotation`, `arm_rot_r`, `arm_flex_r` with the source's declared filter; skip trials without a dynamics pass |
-| GAITEX | `skeleton_motion` | `osim_mot` (+ `trc`) | per-trial scaled skeletons pooled per subject; frozen-root recovery from `.trc`; gender declared neutral; provenance restricted to joints the nine worn sensors drive; joint-range settings |
-| AMASS | `smpl_parameters` | `npz` | `poses[:, :66]` + hands identity; 16 betas to 10; `gender` field; `mocap_framerate` with a per-sub-dataset fallback table; Z-up |
-| PRISM | `smpl_parameters` | `pickle` | pickle field bindings; gender from the subject-info table; frame and rate as the pickles state |
-| HKNU | `joint_centres` | `mat` | Visual3D marker/segment-centre bindings; naming table with the `TA → trunk` alias; rescale rest joints to measured bone lengths; pelvis constant / lumbar zero policy; static-trial list for shape |
+| AddBiomechanics | `skeleton_motion` | `b3d` | study and subject layout; the `biological_sex` map with `unknown → neutral`; dynamics pass first with the kinematics pass as the fallback; the OpenSim naming table; the trunk body; the lumbar split over spine1/2/3; landmark offsets; wrap repair on the coordinates that wrap, with the filter the source declares; skip a trial without a dynamics pass |
+| GAITEX | `skeleton_motion` | `osim_mot` (+ `trc`) | per-trial scaled skeletons pooled per subject; root recovery for the frozen translation the published IK left; gender declared neutral; provenance restricted to the joints the worn sensors drive; joint-range settings |
+| AMASS | `smpl_parameters` | `npz` | the first 66 pose parameters plus identity hands; betas truncated to the model width; the `gender` field; `mocap_framerate` with a per-sub-dataset fallback table; Z-up |
 
-Nothing in this table needs a Python file. That is the test of the design: if a dataset needs
-code, the code belongs to a kind or a format, and the profile only points at it.
+None of these needed a Python file. That is the test of the design: if a dataset needs code, the
+code belongs to a kind or a format, and the profile only points at it.
 
-### 4.5 Fit, repair, corpus, validate
+### 3.5 Fit, repair, corpus, validate
 
-- `fit.shape`: bone-length least squares with regularisation and optional stature/volume terms;
-  `rescale_rest_joints` returning a `Shape` that records whether it was scaled; `pool_skeletons`.
-- `fit.correspondence`: `Correspondence.from_yaml` (names → SMPL joints; fill rule `weld` /
-  `distribute` / `estimate` per missing joint; trunk body; lumbar split; aliases);
-  `restrict_to_driven`.
-- `fit.pose_transfer` (segment rotations with calibration alignment), `fit.pose_ik` (Kabsch
+- `fit.shape`: bone-length least squares with regularisation and optional stature and volume terms;
+  a rest-skeleton rescale that records that it happened; skeleton pooling across trials.
+- `fit.correspondence`: names → SMPL joints; the fill rule `weld` / `distribute` / `estimate` per
+  missing joint; trunk body; lumbar split; aliases; demotion of joints nothing observed.
+- `fit.pose_transfer` (segment rotations with a calibration alignment), `fit.pose_ik` (Kabsch
   initialisation, least squares with angle regularisation and temporal smoothing), `fit.root`.
-- `repair.wrap` (unwrap before filtering, only the named coordinates), `repair.resample` (slerp,
-  linear), `repair.discontinuity` (flag, never edit).
-- `corpus` writes/reads `docs/corpus-format.md`; every manifest carries profile id and hash,
-  settings used, source hashes, converter version and commit, provenance codes.
-- `validate` reports FK reproduction against the source observations, bone-length residuals,
-  joint-range coverage, and round trips for `smpl_parameters` input.
+- `repair.wrap` (unwrap before filtering, only the named coordinates), `repair.resample` (slerp for
+  rotations, linear for translation), `repair.discontinuity` (flag, never edit).
+- `corpus` writes and reads the format in `corpus-format.md`; every manifest carries the profile id
+  and hash, the settings used, the source hashes, the converter version and commit, and the
+  provenance codes.
+- `validate` reports forward-kinematics reproduction against the source observations, bone-length
+  residuals, joint-range coverage, and a round trip for `smpl_parameters` input.
 
-### 4.6 Settings discipline
+### 3.6 Settings discipline
 
-No numeric limit has a default in library code. Functions take a `settings` mapping resolved by
-the profile and fail when a required key is missing. `configs/settings/` ships documented
-examples. This mirrors the SOMA project's rule and keeps every threshold visible in the manifest.
+No numeric limit has a default in library code. Functions take a `settings` mapping resolved by the
+profile and fail when a required key is missing; `configs/settings/` ships documented examples. A
+threshold that lives in configuration is visible in the corpus manifest afterwards, and two runs
+cannot disagree silently about it.
 
-### 4.7 CLI
+### 3.7 CLI
 
 ```
 smpl24 extract-model --pkl <file> --gender <g> --out <dir>
 smpl24 convert --profile <profile.yaml> --input <root> --models <dir> --out <corpus>
 smpl24 convert --kind <kind> --format <fmt> [--correspondence ...] [--markerset ...] --settings ... \
                --input <file-or-root> --models <dir> --out <corpus>      # ad hoc, no profile
-smpl24 profile validate <profile.yaml>
-smpl24 profile show <profile.yaml>          # resolved bindings, referenced files and their hashes
+smpl24 profile validate <name-or-path>
+smpl24 profile show <name-or-path>          # resolved bindings, referenced files and their hashes
 smpl24 fbx2bvh --input <clip.fbx> --blender <exe> --out <clip.bvh>
 smpl24 info <corpus>
 smpl24 validate <corpus> [--against <source>]
 ```
 
-A subcommand is added only together with the module it fronts.
+A subcommand is added only together with the module it fronts, so no command exists without an
+implementation.
 
 ---
 
-## 5. Migration phases
-
-Each phase ends with the listed check green. Phases 2 and 3 carry the risk and are gated by
-parity: the same sample converted through the dataset's profile must reproduce today's corpus.
-
-| Phase | Content | Check |
-|---|---|---|
-| **0 Seed** (this change) | plan, README, pyproject, skeleton, primer, corpus-format draft, in-tree at `packages/smpl24/` | `pytest` in the seed; project's markdown-link test |
-| **1 Split and mount** | owner creates the remote; `git init` from the seed, first commit, push; remove the seed directory from the project; `git submodule add <url> packages/smpl24`; dev install; project `pytest` `pythonpath` gains `packages/smpl24/src`; CI clones with `--recurse-submodules` | project tests unchanged; `smpl24 --version` from the project's environment |
-| **2a Profile schema first** | `profile/` (schema, loader, binding, layout) with the five profiles of §4.4 written as data and validated; `formats/` for npz, pickle, osim, mot, trc, b3d, mat moved from today's readers | `smpl24 profile validate` passes for all five; format readers reproduce today's tables on fixtures |
-| **2b Move and generalise the engine** | `model/`, `skeleton/`, `sources/{parameters,skeleton,centres}`, `fit/`, `repair/`, `corpus/` moved from §1.1 with dataset constants lifted into the configs; `convert.py` per kind; the project keeps one-release re-export shims with deprecation warnings | the 172 + moved tests green; **parity**: `convert --profile addbiomechanics.yaml` and `--profile gaitex.yaml` on a small fixed sample reproduce every npz array of today's drivers exactly; `--profile amass.yaml` reproduces today's `build_pose24` + resample arrays |
-| **3 Project becomes a client** | the project's retarget drivers become thin calls to `smpl24 convert --profile` (or the API); `code_hash()` replaced by version + submodule commit; registry `library_imports` → `smpl24.*`; the pipeline runner records `smpl24` version, commit, profile hashes and body-model hashes into run provenance (closing the "body_model unavailable" item); shims removed; internal profiles (PRISM, HKNU) live in the project's `configs/` | **parity**: one study's corpus regenerated through the profile and compared with the corpus on disk (identical, or every difference listed and explained); ADR on `main` for the dependency change |
-| **4 New kinds and formats** | `marker_trajectories` kind (conditioning + marker-set rules, generalising the project's marker stack), `c3d` format (extra), `bvh` format + `bvh_fk` skeleton model, `fbx2bvh` bridge; `docs/kinds/*.md` | round trips: synthesise SMPL-24 motion → export to the format → convert back → compare within float tolerance; FK reproduction on public sample files where licences allow |
-| **5 Release discipline** | 0.1.0 tag; semantic versioning; CHANGELOG; the project pins the tag; licence decision applied | release checklist in `CHANGELOG.md` |
-
-**Order inside 2b** (safest first): `model/` and `skeleton/` (pure, twice-implemented today) →
-`sources/skeleton/opensim_fk` → `fit/` → `repair/` → `corpus/` → `convert`.
-
-### 5.1 Progress (2026-09-15)
-
-| Phase | State | Evidence |
-|---|---|---|
-| 0 Seed | done | commits e3b3405, 40dfaa4 |
-| 1 Split and mount | **done** (2026-09-16): the private remote `JeongHyunho/smpl24` carries the package history on `main`, and the project mounts it as a submodule at the same path `packages/smpl24`, pinned by a gitlink. The project's `pyproject.toml` already had `packages/smpl24/src` on the pytest path, so nothing else moved | the exported commit's tree equals the tree the in-tree directory had (`1e3b94ce…`), so the swap changed no content; 433 of the project's tests, including the ones that `import smpl24`, pass against the submodule |
-| 2a Profile schema, profiles, formats | **done** | `profile/` (schema, loader with the `SHARED_DATASET_PATH` resolution, layout, parameter binding), `sources/base.py`, `smpl24 profile validate/show`; shipped profiles `addbiomechanics`, `gaitex`, `amass` and the project's internal `prism`, `hknu` (in the project's `configs/smpl24/`) all validate; `formats/` for osim, mot, trc, c3d (ezc3d), b3d (+ vendored proto, pin verified), bvh (new), npz, json, mat, and a whitelisting pickle reader |
-| 2b Engine move | **started**: `model/` (extract, load, select with no default path) and `skeleton/` (definition, rotations, kinematics, frames) are in; `sources/skeleton/opensim_fk`, `fit/`, `repair/`, `corpus/`, `convert` are next | `tests/parity/test_against_parent.py`: rest joints, segment lengths, gravity frame change, quaternion algebra and Kabsch are bit-identical to the parent; forward kinematics agrees to 1e-12 (batched `einsum` against the parent's per-frame `@`) |
-| 3–5 | not started | — |
-
-Test count at this point: 318 passing in the package, with the parity tests running against the
-parent checkout rather than skipping.
-
-### 5.2 Findings recorded during 2a/2b
-
-- **The frame change needs the rest pelvis.** Turning the up axis is `R_0' = C R_0` and
-  `t' = C (j_0 + t) − j_0`, not `t' = C t`: the root rotation turns the body about the pelvis
-  `j_0`, while `t` moves the model origin. With `t' = C t` a test skeleton landed 0.248 m off; the
-  exact form is at 4e-16. `skeleton.frames.FrameChange.apply_to_pose` takes `pelvis_rest`, and the
-  primer (this package's and the project's Korean guide) was corrected in section 3.4.
-- **The format readers stay uninterpreted.** Each reader returns the file's own names, frame and
-  units. What the parent did while reading and is really a dataset decision now sits in profiles
-  or in a kind: the `.b3d` Y-up to Z-up turn, "dynamics pass first", GAITEX's frozen-root recovery,
-  its millimetre conversion, and the exact-zero occlusion sentinel.
-- **Parent and package protobuf copies cannot share a process.** Importing the parent's vendored
-  `SubjectOnDisk_pb2` and the package's registers `SubjectOnDisk.proto` twice. Harmless inside the
-  package; it disappears when the parent deletes its copy in phase 3. The parity tests avoid it
-  because the parent modules they import do not load the proto.
-- **PRISM's Large pelvis is not `trans`.** The project's PRISM generator takes the pelvis trajectory
-  from `imu_gt.Pelvis.pos_world`, which differs from SMPL `trans` by the rest pelvis offset. The
-  `prism` profile binds `trans` as the usage policy prescribes; phase 3 parity for PRISM has to
-  compare against the generator's SMPL parameters, not against its Large pelvis.
-- **The schema grew where the drivers needed it**, and only declaratively: a subject table read from
-  a workbook, a gender cross-check field, root alignment from anatomical directions, pose reference
-  from a static trial, per-bone rescale lists. No expression language was added.
-
----
-
-## 6. Integration with the SOMA project
-
-- **Mount point** `packages/smpl24/` (the seed lives there, so the path does not change when the
-  submodule replaces it; the project's plan link keeps resolving).
-- **Changing the package now** means committing here and moving the project's gitlink:
-
-  ```bash
-  cd packages/smpl24 && git commit -am "..." && git push && cd ../..
-  git add packages/smpl24 && git commit -m "bump the smpl24 pin"
-  ```
-
-  A fresh clone of the project needs `git submodule update --init` (or
-  `git clone --recurse-submodules`); without it `import smpl24` fails, which is the intended
-  loud failure rather than a second copy of the model-selection rule.
-- **Profiles.** Public datasets' profiles ship in `smpl24/configs/profiles/` as examples. The
-  project authors internal ones (PRISM, HKNU) in its own `configs/smpl24/` and publishes them to
-  the shared drive with its push procedure; at run time `smpl24` resolves a profile name through
-  `SHARED_DATASET_PATH` (`$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`). The project's
-  registry (`source_pipelines_v1.yaml`) gains one field per source: `smpl24_profile`.
-- **Pinning and provenance.** The project records the submodule commit, the profile id and hash,
-  and `Model.sha256` per selected model in every run record; §10.2's "model/checkpoint hash" is
-  satisfied.
-- **Governance.** Moving code changes no field meaning, shape, order, unit, frame or rate, so
-  phases 1–3 need no contract change; the dependency and the registry field need an ADR (numbers
-  allocated on `main`). Holds are untouched: `smpl24` never generates inside the project; the
-  runner gates every generation.
-- **Data plane.** The package never reads `SOMA_DATA_ROOT` implicitly; the project passes model
-  and corpus paths explicitly.
-- **Windows and Dropbox.** The project's `.git` lives in Dropbox; submodule internals will too.
-  Keep commits small and let Dropbox settle before switching branches.
-
----
-
-## 7. Decisions (owner, 2026-09-15)
+## 4. Decisions
 
 | Decision | Outcome |
 |---|---|
-| Remote for the new repository | **private GitHub repository, created 2026-09-16: `JeongHyunho/smpl24`.** The package history was exported with `git subtree split --prefix=packages/smpl24` and pushed to its `main`; the same day the project replaced its in-tree copy with a submodule at that path. This repository is now the working copy, and the project moves its gitlink to pick up a change |
-| Package and CLI name | **`smpl24`** (proposed and adopted): the skeleton's name, short, one word for the distribution, the import and the command. Alternatives considered: `smpl24-retarget` (narrower than the parameter and marker paths), `mocap2smpl24` (longer, hyphen-free import impossible) |
-| Code licence | **MIT** (proposed and adopted; `LICENSE` added). Permissive, the most common choice for research tooling, no patent clause to negotiate. Apache-2.0 remains the alternative if the institution wants an explicit patent grant. The licence does not change the repository's INTERNAL-ONLY status; publication is a separate owner decision under the parent project's rules |
-| Where internal profiles live | authored in the parent project's `configs/smpl24/`, **published to the shared drive** and found at run time through the `SHARED_DATASET_PATH` environment variable: `$SHARED_DATASET_PATH/smpl24/profiles/<name>.yaml`, with the package's `configs/` layout mirrored beside it. Public profiles ship in the package |
-| `.c3d` reading | **`ezc3d` as a regular dependency** |
-| FBX route | **Blender bridge** (`smpl24 fbx2bvh`, external Blender executable); native FBX reading is out of scope |
-| Mount path in the project | `packages/smpl24` |
+| Name | `smpl24`: the skeleton's name, one word for the distribution, the import and the command |
+| Licence | MIT (`LICENSE`), covering this code only. SMPL body models and every dataset keep their own licences |
+| Repository | private while the work is in progress |
+| `.c3d` reading | `ezc3d`, a regular dependency |
+| FBX | a Blender bridge (`smpl24 fbx2bvh`); native FBX reading is out of scope |
+| Profiles that cannot be published | kept outside this repository and found through `SHARED_DATASET_PATH` |
 
 ---
 
-## 8. Risks
+## 5. Roadmap
+
+| Step | State |
+|---|---|
+| Model handling: clean-model extraction, loading with hashes, selection by gender with no default location | **done** |
+| Skeleton: joint definition, rotations and Kabsch, forward kinematics, frame changes | **done** |
+| Formats: osim, mot, trc, c3d, b3d, bvh, npz, json, mat, whitelisted pickle | **done** |
+| Profiles: schema, loader, layout discovery, parameter binding, `profile validate` / `show` | **done** |
+| Sources: skeleton FK models, joint-centre and marker kinds | next |
+| Fit: shape, correspondence, pose transfer, position IK, root | next |
+| Repair and corpus: wrap, resample, discontinuity; corpus write, read, summary | after fit |
+| `convert` and the remaining CLI commands, one per kind | after corpus |
+| Round-trip tests per format (synthesise SMPL-24 motion, export, convert back, compare) | with each new format |
+| 0.1.0: semantic versioning, changelog, release checklist | when a corpus can be produced end to end |
+
+---
+
+## 6. Facts worth keeping in view
+
+- **The frame change needs the rest pelvis.** Turning the up axis is `R_0' = C R_0` and
+  `t' = C (j_0 + t) − j_0`, not `t' = C t`: the root rotation turns the body about the pelvis
+  `j_0`, while `t` moves the model origin. On a test skeleton the short form landed 0.248 m off;
+  the exact form is at 4e-16. See `primer.md` §3.4.
+- **A format reader that interprets is a bug.** Frames, units, pass selection and fill policies are
+  profile decisions. A reader that quietly turns a Y-up world into Z-up makes two datasets
+  indistinguishable in the corpus.
+- **The body-model set matters, not one file.** Generators pick per subject by gender, so a corpus
+  of mixed-sex subjects came from more than one model file; recording the set and its hashes is the
+  honest account.
+- **Betas cannot reach every skeleton.** Ten shape coefficients miss some cohorts' hip and shoulder
+  separations. Either accept and record the residual, or rescale the rest skeleton and ship the
+  scaled skeleton, since the pose was fitted against it.
+
+---
+
+## 7. Risks
 
 | Risk | Mitigation |
 |---|---|
-| A dataset name creeps back into code (`if profile.id == "gaitex"`) | review rule and a test that greps `src/` for profile ids; anything dataset-specific must be expressible in the schema, or the schema grows |
-| The profile schema becomes a second programming language | keep it declarative: enumerated policies (`root.placement`, fill rules), no expressions; a policy that cannot be enumerated is a code feature of a kind |
-| Two copies of the engine drift during phase 2 | one release with shims, then delete; parity on the same sample at both ends |
-| A threshold sneaks in as a default | tests assert every settings key is required; review checklist |
-| Model-path convenience returns (a hardcoded `D:` path) | `Model.for_gender` has no default root; a test asserts it fails without one |
-| `filterwarnings = error` makes third-party deprecation warnings fatal | pin dependency majors; keep the setting |
-| Submodule friction on Windows/Dropbox | small commits; documented `git submodule update --init`; CI uses `--recurse-submodules` |
-| Reproduction differs after the move for correct reasons (a fixed bug) | phase 3 parity lists every difference; the project decides whether to regenerate |
-
----
-
-## 9. Milestones
-
-Working sessions, not dates.
-
-1. Phase 0 (this change) and phase 1 (owner's remote + mount): one session.
-2. Phase 2a (schema + five profiles + formats): one session.
-3. Phase 2b (engine move with generalisation): two sessions plus the parity runs.
-4. Phase 3: one session plus the corpus regeneration and its ADR.
-5. Phase 4: one session per kind or format (markers, BVH, then FBX).
-6. Phase 5: half a session.
+| A dataset name creeps into code (`if profile.id == ...`) | the grep test over `src/`; anything dataset-specific must be expressible in the schema, or the schema grows |
+| The profile schema becomes a second programming language | keep it declarative: enumerated policies, no expressions. A policy that cannot be enumerated is a code feature of a kind |
+| A threshold sneaks in as a default | tests assert every settings key is required |
+| Model-path convenience returns as a hardcoded path | `Model.for_gender` has no default root, and a test asserts it fails without one |
+| `filterwarnings = error` makes a dependency's deprecation fatal | dependency majors are pinned |

@@ -15,15 +15,17 @@ to that dataset's layout, field names, units, joint correspondence, repairs and 
 | `joint_centres` | anatomical joint-centre trajectories | `mat`, `trc`, `c3d` |
 | `marker_trajectories` | labelled surface markers | `trc`, `c3d`, with a marker-set description |
 
-Example profiles ship for public datasets (AddBiomechanics, GAITEX, AMASS); a project keeps its
-own profiles for internal ones. Adding a dataset means writing a profile, not a module.
+Example profiles ship for public datasets (AddBiomechanics, GAITEX, AMASS). A dataset that
+cannot be published keeps its profile outside this repository, found through
+`SHARED_DATASET_PATH`. Adding a dataset means writing a profile, not a module.
 
-**Status: planning seed.** This directory holds the founding plan, the target interface and a
-package skeleton. The commands and API below are the v0.1 specification; the engine arrives in
-the migration phases described in [`docs/plan.md`](docs/plan.md).
+**Status: in progress.** Model handling, the skeleton, the format readers and the profile layer
+are implemented; the fitting, repair and corpus layers are next, so the `convert` commands below
+are still the specification rather than working code. [`docs/plan.md`](docs/plan.md) has the
+roadmap.
 
-**INTERNAL-ONLY** until the owner decides otherwise. The repository contains no body-model files
-and no motion data; see [Body models and licences](#body-models-and-licences).
+The repository contains no body-model files and no motion data; see
+[Body models and licences](#body-models-and-licences).
 
 ---
 
@@ -76,10 +78,10 @@ smpl24 convert --profile configs/profiles/gaitex.yaml --input /data/gaitex \
 smpl24 convert --profile configs/profiles/amass.yaml --input /data/amass \
     --models ~/smpl24-models --out corpus/amass
 
-# An internal dataset: its profile is not in this repository. Point SHARED_DATASET_PATH at the
-# shared drive where the project publishes internal profiles, then name the profile.
+# A dataset whose profile is not in this repository: point SHARED_DATASET_PATH at the drive that
+# holds it, then name the profile.
 export SHARED_DATASET_PATH=/mnt/shared/datasets      # or set it in the environment once
-smpl24 convert --profile prism --input /data/prism --models ~/smpl24-models --out corpus/prism
+smpl24 convert --profile <name> --input /data/<dataset> --models ~/smpl24-models --out corpus/<name>
 ```
 
 A profile name resolves in this order: an existing path as given; `configs/profiles/<name>.yaml`

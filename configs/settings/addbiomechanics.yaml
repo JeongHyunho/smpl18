@@ -1,11 +1,10 @@
-# Numbers the AddBiomechanics driver defaults or hardcodes, layered over default.yaml by the
-# profile's settings list. Sources: scripts/poc/generate_addbio_smpl24.py in the SOMA
-# Synthetic IMU project (2026-09-15).
+# Numbers the AddBiomechanics conversion sets for itself, layered over default.yaml by the
+# profile's settings list. They are the ones the reference conversion of 2026-09-15 ran with.
 schema: smpl24_settings_v1
 id: addbiomechanics
 
 shape_fit:
   # Shape is fitted once per subject from the first eligible trials, sampling frames evenly
-  # (generate_addbio_smpl24.py:258-259 --shape-trials 3, --shape-frames 60; :148-153 linspace).
+  # across each of them.
   sample_trials: 3
   sample_frames_per_trial: 60

@@ -1,18 +1,14 @@
 # OpenSim (Rajagopal-family) joint names -> SMPL-24 joints, as data.
 #
-# Lifted from src/soma_synthetic_imu/addbio_retarget/smpl_correspondence.py (_CHAIN :55-71,
-# _LUMBAR_JOINT/_LUMBAR_SMPL :75-76, _ROOT_TRANSLATION :80) and pose_fit.py (_TRUNK_BODY :45,
-# _LUMBAR_SMPL :44) in the SOMA Synthetic IMU project, 2026-09-15.
-#
-# The table is intersected with the skeleton a file actually declares
-# (smpl_correspondence.py:100-147): a joint the model lacks makes its SMPL joint `absent` by
-# the same rule that leaves the neck absent in every variant. Nothing here is a special case.
+# The table is intersected with the skeleton a file actually declares: a joint the model lacks
+# makes its SMPL joint `absent` by the same rule that leaves the neck absent in every variant.
+# Nothing here is a special case.
 schema: smpl24_correspondence_v1
 id: opensim_rajagopal
 # Entries name source *joints*; the body driving an SMPL joint's rotation is the child body of
 # the LAST joint in its chain (the distal segment SMPL spans: the calcaneus past the subtalar,
-# not the talus; smpl_correspondence.py:90-93,144). The FIRST joint supplies the position
-# target (its centre); later joints contribute rotation only (smpl_correspondence.py:52-54).
+# not the talus). The FIRST joint supplies the position target (its centre); later joints
+# contribute rotation only.
 names: opensim_joints
 
 joints:
@@ -41,21 +37,20 @@ joints:
   left_hand:      {fill: weld}
   right_hand:     {fill: weld}
 
-# The trunk is one rigid body measured through a single 3-DOF joint; its rotation is
-# distributed over the three spine joints in equal thirds (pose_fit.py:20-23,162-168). Only the
-# lowest of them has a measured centre to aim at: the `back` joint origin
-# (smpl_correspondence.py:73-76,116-119).
+# The trunk is one rigid body measured through a single 3-DOF joint; its rotation is distributed
+# over the three spine joints in equal thirds. Only the lowest of them has a measured centre to
+# aim at: the `back` joint origin.
 lumbar:
   source_joint: back
   smpl: [spine1, spine2, spine3]
   split: equal_thirds
   centre_on: spine1
 
-# The body whose rotation, relative to the root body, the lumbar rule reads (pose_fit.py:45).
+# The body whose rotation, relative to the root body, the lumbar rule reads.
 trunk_body: torso
 
 # Coordinates that describe where the pelvis is, not how it is turned; they belong to `trans`
-# and are never reported among a joint's rotation coordinates (smpl_correspondence.py:77-80).
+# and are never reported among a joint's rotation coordinates.
 root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]
 
 # Source-name aliases (alias -> name the file uses). None needed: the names above are the

@@ -1,7 +1,8 @@
 """No dataset may be named in library code: a dataset is a profile, never a module.
 
-Dataset ids belong in configs/ and in test fixtures. Their appearance anywhere under src/smpl24
-(code, docstrings or comments) is the defect the plan's section 8 warns about.
+The ids come from the profiles in configs/, so the guard grows with them and names no dataset
+of its own. Their appearance anywhere under src/smpl24 (code, docstrings or comments) is the
+risk the plan's Risks section warns about.
 """
 
 import pathlib
@@ -9,8 +10,17 @@ import re
 
 import pytest
 
-SRC = pathlib.Path(__file__).resolve().parents[1] / "src" / "smpl24"
-DATASET_IDS = ("addbio", "addbiomechanics", "gaitex", "prism", "amass", "hknu")
+PACKAGE = pathlib.Path(__file__).resolve().parents[1]
+SRC = PACKAGE / "src" / "smpl24"
+#: Every shipped profile id, plus the stems of the tables the profiles point at, so a name that
+#: belongs to a dataset cannot reach the library through either route.
+DATASET_IDS = tuple(sorted({
+    part
+    for directory in ("profiles", "correspondence", "offsets", "settings", "markersets")
+    for path in (PACKAGE / "configs" / directory).glob("*.yaml")
+    for part in path.stem.split("_")
+    if len(part) > 3 and part not in {"default", "landmarks", "rajagopal", "opensim"}
+}))
 PATTERN = re.compile("|".join(DATASET_IDS), re.IGNORECASE)
 SOURCES = sorted(SRC.rglob("*.py"))
 

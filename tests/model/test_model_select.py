@@ -92,13 +92,15 @@ def test_model_for_gender_loads_the_selected_file(model_dir, monkeypatch):
 
 
 def test_no_machine_path_and_no_dataset_name_in_the_moved_sources():
+    from tests.test_no_dataset_names_in_src import DATASET_IDS
+
     files = [
         SOURCES / "formats" / "pickle_safe.py",
         *(SOURCES / "model").glob("*.py"),
         *(SOURCES / "skeleton").glob("*.py"),
     ]
     drive = re.compile(r"[A-Za-z]:\\")
-    datasets = re.compile(r"addbio|addbiomechanics|gaitex|prism|amass|hknu", re.IGNORECASE)
+    datasets = re.compile("|".join(DATASET_IDS), re.IGNORECASE)
     for path in files:
         text = path.read_text(encoding="utf-8")
         assert not drive.search(text), f"machine path in {path.name}"

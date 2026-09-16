@@ -1,0 +1,4 @@
+# Normalise line endings in the repository; check out platform-native where it matters.
+* text=auto eol=lf
+*.png binary
+*.npz binary

@@ -1,61 +1,56 @@
 # Engine settings shared by every profile. Numbers only live here, never in library code: a
 # function that needs one of these takes a settings mapping and fails when the key is missing.
-# Every value cites the file and line in the SOMA Synthetic IMU project it was lifted from
-# (paths relative to that repository, as of 2026-09-15).
+# These are the values the reference conversions of 2026-09-15 ran with.
 schema: smpl24_settings_v1
 id: default
 
 shape_fit:
-  n_betas: 10                     # shape_fit.py:404  fit_betas(n_betas=10)
-  regularisation: 1.0e-3          # shape_fit.py:74   _DEFAULT_REGULARISATION
-  stature_weight: 0.3             # shape_fit.py:72   _DEFAULT_STATURE_WEIGHT
-  mass_weight: 0.05               # shape_fit.py:73   _DEFAULT_MASS_WEIGHT
-  body_density_kg_m3: 1000.0      # shape_fit.py:67   BODY_DENSITY_KG_M3 (a stated assumption)
-  optimiser: trf                  # shape_fit.py:453  least_squares(method="trf")
-  include_torso_paths: true       # shape_fit.py:252,258  _TORSO_PATHS (pelvis->shoulders) added
-  # Bone lengths are the median over the frames measured (shape_fit.py:297).
+  n_betas: 10                     # shape parameters solved for
+  regularisation: 1.0e-3          # weight of the beta penalty that holds the fit near the mean body
+  stature_weight: 0.3             # weight of the stature residual against the bone-length residuals
+  mass_weight: 0.05               # weight of the mass residual
+  body_density_kg_m3: 1000.0      # mass from mesh volume assumes water density (a stated assumption)
+  optimiser: trf                  # trust-region reflective least squares
+  include_torso_paths: true       # the pelvis-to-shoulder paths join the lengths being matched
+  # Bone lengths are the median over the frames measured.
   length_statistic: median
 
 pose_transfer:
-  # The three spine joints share the trunk's rotation in equal thirds (pose_fit.py:162-168).
+  # The three spine joints share the trunk's rotation in equal thirds.
   lumbar_split: equal_thirds
   # A root fitted from child offsets needs at least this many to fit a translation as well as
-  # a rotation (pose_fit.py:322).
+  # a rotation.
   root_min_children_for_offset: 3
-  # Directions handed to a root placement are normalised before the fit (pose_fit.py:245).
+  # Directions handed to a root placement are normalised before the fit.
   direction_norm_floor: 1.0e-12
 
 wrap:
   # Read from each trial's own lowPassFilter pass header when the profile says
-  # filter: declared_by_source. These are the values ADR-0034 measured across all 40,537
-  # passes with no exception (wrap_repair.py:26-29); used when filter: from_settings.
+  # filter: declared_by_source. These are the values all 40,537 filtered passes of the
+  # AddBiomechanics cohort declare, with no exception; used when filter: from_settings.
   filter_order: 2
   filter_cutoff_hz: 30.0
   # filtfilt pads with 3 * max(len(a), len(b)) samples; below that a wrapping column cannot be
-  # repaired and the trial must not be passed off as clean (wrap_repair.py:60-61,171-176).
+  # repaired and the trial must not be passed off as clean.
   min_frames: 10
 
 resample:
-  rotations: slerp                # generate_amass_faithful.py:227-240 per-joint Slerp
-  translation: linear             # generate_amass_faithful.py:243-249 per-axis np.interp
-  # Guards the floor in the resampled frame count against float underflow
-  # (generate_amass_faithful.py:213-218).
+  rotations: slerp                # per-joint Slerp on the local rotations
+  translation: linear             # per-axis linear interpolation on trans
+  # Guards the floor in the resampled frame count against float underflow.
   endpoint_epsilon: 1.0e-9
-  # A sequence shorter than this after resampling is refused (generate_amass_faithful.py:407).
+  # A sequence shorter than this after resampling is refused.
   min_frames_after: 4
 
 discontinuity:
-  # The spec's own blow-up band, in deg/s; divided by the frame rate it is the largest step any
-  # joint's global rotation may take between adjacent frames
-  # (validation/checks.py:48 DEFAULT_BANDS.gyro_abs_max_deg_s; pose_discontinuity_scan.py:67-74).
+  # The blow-up band, in deg/s, shared with the gyro check; divided by the frame rate it is the
+  # largest step any joint's global rotation may take between adjacent frames.
   gyro_abs_max_deg_s: 8000.0
-  # Pelvis-to-spine3 median angle above which a take's trunk is inverted, not bent
-  # (pose_discontinuity_scan.py:76 TRUNK_LIMIT_DEG).
+  # Pelvis-to-spine3 median angle above which a take's trunk is inverted, not bent.
   trunk_inversion_limit_deg: 150.0
-  # Which SMPL joints the trunk angle is measured between (pose_discontinuity_scan.py:81).
+  # Which SMPL joints the trunk angle is measured between.
   trunk_joints: [pelvis, spine3]
 
 frames:
-  # Whole trials are converted unless a profile's settings say otherwise
-  # (generate_addbio_smpl24.py:256 --max-frames default None; generate_gaitex_smpl24.py:281 0).
+  # Whole trials are converted unless a profile's settings say otherwise.
   max_per_trial: all

@@ -2,9 +2,9 @@
 # (.mot) solved from nine inertial units, marker trajectories (.trc) beside them, and a metadata
 # JSON naming the driven bodies.
 #
-# Parity basis: scripts/poc/generate_gaitex_smpl24.py and src/soma_synthetic_imu/gaitex_retarget/
-# in the SOMA Synthetic IMU project (2026-09-15), run with the driver's defaults, which is how
-# the corpus gaitex_smpl24 was generated. Every value cites the file and line it came from.
+# This profile reproduces the reference GAITEX conversion of 2026-09-15: shape pooled per subject,
+# the frozen pelvis translation recovered from markers, and provenance limited to the bodies each
+# trial's metadata declares driven. Every value below says what it means for this dataset.
 schema: smpl24_profile_v1
 id: gaitex
 description: GAITEX subject/condition trials (scaled OpenSim model + IMU-driven IK + markers)
@@ -12,49 +12,45 @@ source_kind: skeleton_motion
 format: osim_mot
 
 layout:
-  subject: "{subject}"              # gaitex_frames.py:201-209 discover_subjects: directories under the root
-  trial: "{subject}/{trial}"        # generate_gaitex_smpl24.py:99-100 conditions_of: subdirectories of the subject
-  skip_dirs_starting_with: ["_", "."]   # gaitex_frames.py:88 NON_SUBJECT_PREFIXES
-  files:                            # gaitex_frames.py:133-156 GaitexTrial paths
+  subject: "{subject}"              # every directory under the archive root is a subject
+  trial: "{subject}/{trial}"        # a subject's subdirectories are its conditions
+  skip_dirs_starting_with: ["_", "."]   # bookkeeping directories, not subjects
+  files:                            # the four files a trial is read from
     osim: "{subject}/{trial}/ik_imus/models/scaled_model_{subject}_{trial}.osim"
     mot: "{subject}/{trial}/ik_imus/results_imu_ik/ik_segment_registered_imu_data_{subject}_{trial}.mot"
     trc: "{subject}/{trial}/ik_imus/marker_data_osim_format_{subject}_{trial}.trc"
     metadata: "{subject}/{trial}/metadata_{subject}_{trial}.json"
 
 bindings:
-  # The archive records no sex anywhere; neutral is declared, not read
-  # (generate_gaitex_smpl24.py:85-88; gaitex_frames.py:105-118).
+  # The archive records no sex anywhere; neutral is declared here, not read.
   gender: {constant: neutral}
-  root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]   # gaitex_frames.py:85 TRANSLATIONAL_COORDINATES
-  # A lost marker is written as an exact zero triplet and must be blanked before any fit
-  # (gaitex_frames.py:49-51,289-292,323).
+  root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]   # the pelvis coordinates that translate, not rotate
+  # A lost marker is written as an exact zero triplet and must be blanked before any fit.
   markers: {occlusion_sentinel: zero}
 
 conventions:
-  up_axis: y                        # world frame from the model's declared gravity (gaitex_frames.py:436)
-  length_unit: m                    # .mot translations in metres; the .trc is millimetres and the reader converts (gaitex_frames.py:322)
-  angle_unit: deg                   # the .mot header says inDegrees=yes (gaitex_frames.py:83-85,462-464)
+  up_axis: y                        # world frame from the gravity the model declares
+  length_unit: m                    # .mot translations in metres; the .trc is millimetres and the reader converts
+  angle_unit: deg                   # the .mot header says inDegrees=yes
   up_axis_check: model_gravity
 
-# The AddBiomechanics table, unchanged: correspondence_for(source.topology)
-# (generate_gaitex_smpl24.py:58-61,140,196).
+# The same OpenSim table AddBiomechanics uses, picked by the topology the model declares.
 correspondence: ../correspondence/opensim_rajagopal.yaml
 
 shape:
   method: bone_lengths
-  landmark_offsets: none            # generate_gaitex_smpl24.py:176-182 passes no landmark_offsets
+  landmark_offsets: none            # no landmark offsets are applied
   rescale_to_measured: false
   # The model is scaled per trial and the skeletons disagree, so one subject's targets are the
-  # median across its trials (gaitex_retarget/shape.py:1-24,71-93 pool_segment_lengths).
+  # median across its trials.
   pool_per_subject: true
-  # Hip-to-ankle spans steady the fit against the wandering knee centre
-  # (gaitex_retarget/shape.py:54-68 knee_bracketing_pairs; driver :158).
+  # Hip-to-ankle spans steady the fit against the wandering knee centre.
   extra_spans:
     - [left_hip, left_ankle]
     - [right_hip, right_ankle]
   from_trials: all
-  use_stature: false                # height=-1 for every subject, a placeholder (driver :180; gaitex_frames.py:108-112)
-  use_mass: false                   # mass=90 for every subject, a placeholder (driver :181)
+  use_stature: false                # the archive stores height -1 for every subject, a placeholder
+  use_mass: false                   # and mass 90 for every subject, likewise
 
 root:
   placement: pelvis_centre
@@ -62,40 +58,39 @@ root:
   tracked: []
   # The published IK froze pelvis_tx/ty/tz at their initial-pose values; the pelvis pose is
   # recovered from the four pelvis stations the model declares and the .trc observes, and its
-  # translation replaces the frozen coordinates (gaitex_frames.py:10-51,327-406,467-473).
+  # translation replaces the frozen coordinates.
   recover_frozen:
-    markers: [R_IAS, L_IAS, R_IPS, L_IPS]   # gaitex_frames.py:81 PELVIS_STATIONS
-    body: pelvis                             # gaitex_frames.py:28-31 stations on the pelvis body
+    markers: [R_IAS, L_IAS, R_IPS, L_IPS]   # right/left anterior and posterior iliac spine
+    body: pelvis                             # the stations sit on the pelvis body
     coordinates: [pelvis_tx, pelvis_ty, pelvis_tz]
 
 pose:
-  method: segment_rotation_transfer # generate_gaitex_smpl24.py:230-237 fit_pose, unchanged
+  method: segment_rotation_transfer # segment rotations are transferred as the IK solved them
   reference: none
   place_unfitted_from_reference: false
   lumbar_zero_from_reference: false
 
 provenance:
   # The skeleton is complete but only nine bodies wear a sensor; a joint whose driving body
-  # nothing observed is absent, not measured. The driven set is read per trial from the
-  # metadata's inverse_kinematics block (gaitex_frames.py:438; provenance.py:14-18,30-52).
-  # In the published cohort that block names pelvis, torso, femur_l, femur_r, tibia_l, tibia_r,
-  # calcn_l, calcn_r and toes_r (configs/datasets/gaitex_field_registry_v1.yaml:107-116).
+  # nothing observed is absent, not measured. The driven set is read per trial from the metadata's
+  # inverse_kinematics block. In the published cohort that block names pelvis, torso, femur_l,
+  # femur_r, tibia_l, tibia_r, calcn_l, calcn_r and toes_r.
   restrict_to_driven: {from: trial_metadata, file: metadata, field: inverse_kinematics}
 
 repairs:
-  wrap: none                        # generate_gaitex_smpl24.py:255 wrap_repaired_coordinates=[]
-  resample: none                    # the source rate is kept (driver :256, :281 --max-frames 0)
+  wrap: none                        # no coordinate here carries a 2*pi staircase to repair
+  resample: none                    # the source rate is kept and no frame cap applies
   discontinuity: {settings_key: discontinuity, action: flag}
   # A gap in the solved pelvis ends the take: the longest solved run is kept and the rest is
-  # reported as coverage (generate_gaitex_smpl24.py:103-121,201-217).
+  # reported as coverage.
   longest_solved_span: true
   # Declared joint ranges are measured over the frames the take carries and recorded; no frame
-  # is dropped and no take refused (driver :77,218-225; gaitex_retarget/joint_ranges.py:13-15).
+  # is dropped and no take refused.
   joint_ranges: {settings_key: joint_ranges}
 
 skip:
   # A trial whose longest solved span is shorter than settings.frames.min_solved_span is
-  # unavailable (generate_gaitex_smpl24.py:201-209).
+  # unavailable.
   trials_shorter_than: {settings_key: frames.min_solved_span}
 
 settings:

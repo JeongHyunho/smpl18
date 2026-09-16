@@ -1,31 +1,25 @@
-# Numbers the GAITEX driver defaults or hardcodes, layered over default.yaml by the profile's
-# settings list, plus the declared joint ranges. Sources in the SOMA Synthetic IMU project
-# (2026-09-15): scripts/poc/generate_gaitex_smpl24.py and
-# configs/datasets/gaitex_joint_ranges_v1.yaml.
+# Numbers the GAITEX conversion sets for itself, layered over default.yaml by the profile's
+# settings list, plus the joint ranges declared for this dataset. They are the values the
+# reference conversion of 2026-09-15 ran with.
 schema: smpl24_settings_v1
 id: gaitex
 
 shape_fit:
-  # Frames sampled per trial for the pooled shape fit (generate_gaitex_smpl24.py:282-283
-  # --shape-frames 400; :142-146 linspace over the trial).
+  # Frames sampled evenly across a trial for the pooled shape fit.
   sample_frames_per_trial: 400
-  # A trial with fewer solved-pelvis shape frames than this contributes nothing to the shape
-  # (generate_gaitex_smpl24.py:147-152 "TooFewShapeFrames").
+  # A trial with fewer solved-pelvis shape frames than this contributes nothing to the shape.
   min_solved_frames_per_trial: 10
 
 frames:
-  # The longest solved span must be at least this long or the trial is unavailable
-  # (generate_gaitex_smpl24.py:284 --minimum-frames 100; :201-209 "SolvedSpanTooShort").
+  # The longest solved span must be at least this long or the trial is unavailable.
   min_solved_span: 100
 
 joint_ranges:
-  # Copied verbatim from configs/datasets/gaitex_joint_ranges_v1.yaml (config_id
-  # gaitex_joint_ranges_v1, version 1.0.0, created 2026-09-05). Bounds in degrees on OpenSim
-  # coordinate names. Frames outside are counted and recorded; none is dropped
-  # (gaitex_retarget/joint_ranges.py:13-15,159-163).
+  # The declared ranges for this dataset (gaitex_joint_ranges_v1 1.0.0, 2026-09-05), in degrees,
+  # on OpenSim coordinate names. Frames outside a range are counted and recorded; none is dropped.
   source_config_id: gaitex_joint_ranges_v1
   source_version: "1.0.0"
-  limits_deg:                     # gaitex_joint_ranges_v1.yaml:20-28
+  limits_deg:                     # bounds on a single frame's coordinate value
     knee_angle_r: {min: -15.0, max: 155.0}
     knee_angle_l: {min: -15.0, max: 155.0}
     ankle_angle_r: {min: -60.0, max: 60.0}
@@ -33,8 +27,8 @@ joint_ranges:
     hip_flexion_r: {min: -40.0, max: 140.0}
     hip_flexion_l: {min: -40.0, max: 140.0}
     lumbar_extension: {min: -60.0, max: 60.0}
-  span_limits_deg:                # gaitex_joint_ranges_v1.yaml:30-38; a span past these is a
-    knee_angle_r: 170.0           # solve that came apart, not a posture
+  span_limits_deg:                # the widest sweep a take may show; past these it is a solve
+    knee_angle_r: 170.0           # that came apart, not a posture
     knee_angle_l: 170.0
     ankle_angle_r: 120.0
     ankle_angle_l: 120.0

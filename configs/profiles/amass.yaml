@@ -1,9 +1,9 @@
 # AMASS as a profile: SMPL-H parameters in npz files, one sequence per file, sub-datasets as
 # top-level directories.
 #
-# Parity basis: scripts/poc/generate_amass_faithful.py (load_amass_safe, build_pose24, the
-# resampling helpers) and generate_amass_faithful_all.py (enumeration) in the SOMA Synthetic
-# IMU project, 2026-09-15. Every value cites the file and line it came from.
+# This profile reproduces the reference AMASS conversion of 2026-09-15: the 22 body joints taken
+# from the stored SMPL-H poses, betas truncated to ten, and every sequence resampled to 100 Hz.
+# Every value below says what it means for this dataset.
 schema: smpl24_profile_v1
 id: amass
 description: AMASS SMPL-H sequences (*_poses.npz) under sub-dataset directories
@@ -11,38 +11,36 @@ source_kind: smpl_parameters
 format: npz
 
 layout:
-  # generate_amass_faithful_all.py:46-55: every *.npz under <sub-dataset>/**, the subject being
-  # the file's parent directory and the sub-dataset the first directory ({study} here).
+  # Every *.npz below a sub-dataset directory; the subject is the file's parent directory and the
+  # sub-dataset the first directory ({study} here).
   subject: "{study}/{subject}"
   # Motion sequences are named <seq>_poses.npz; shape.npz carries gender and betas only and is
-  # excluded rather than silently dropped (generate_amass_faithful_all.py:59-61,125-128).
+  # excluded rather than silently dropped.
   trial: "{study}/{subject}/{trial}_poses.npz"
   exclude: ["shape.npz"]
 
 bindings:
-  # poses [N, 156] SMPL-H axis-angle -> [N, 52, 3]; the converter keeps the first 22 body
-  # joints and sets the two hands to identity (generate_amass_faithful.py:175,197-203).
+  # poses [N, 156] SMPL-H axis-angle -> [N, 52, 3]; the first 22 body joints are kept and the two
+  # hands set to identity.
   poses: {field: poses, layout: "T,J*3"}
-  # 16 shape parameters; the clean model carries 10 and the converter truncates
-  # (generate_amass_faithful.py:177,534-535 smpl10_beta_truncation).
+  # 16 shape parameters as stored; the body model carries 10, so the rest are truncated.
   betas: {field: betas}
-  trans: {field: trans}             # generate_amass_faithful.py:176
+  trans: {field: trans}             # the root translation as stored, in metres
   fps:
-    field: mocap_framerate          # generate_amass_faithful.py:184-185
-    aliases: [mocap_frame_rate]     # generate_amass_faithful.py:186-187
-    # When the npz omits the rate, the sub-dataset's standard mocap rate stands in
-    # (generate_amass_faithful.py:71-74 DATASET_FPS_FALLBACK, :188-192).
+    field: mocap_framerate          # the rate the npz declares
+    aliases: [mocap_frame_rate]     # some sub-datasets spell the key with an underscore
+    # When the npz omits the rate, the sub-dataset's standard mocap rate stands in.
     fallback_key: study
     fallback: {BMLmovi: 120.0, CMU: 120.0, Transitions: 120.0, KIT: 100.0, TotalCapture: 60.0}
   gender:
-    field: gender                   # generate_amass_faithful.py:146-158 normalize_gender (str, bytes or 0-d array)
+    field: gender                   # stored as a string, as bytes or as a 0-d array
     map: {male: male, m: male, female: female, f: female, neutral: neutral, n: neutral}
-    # A missing field means neutral (:183); an unrecognised value is an error (:158), so no
-    # default is given here.
+    # A missing field means neutral; an unrecognised value is an error, so no default is given
+    # here.
     when_absent: neutral
 
 conventions:
-  up_axis: z                        # empirically Z-up for every sub-dataset (generate_amass_faithful.py:17-19,59)
+  up_axis: z                        # Z-up in every sub-dataset, as measured across the archive
   length_unit: m
   angle_unit: rad
 
@@ -54,14 +52,14 @@ root:
 
 repairs:
   wrap: none
-  # Every sequence is brought to 100 Hz: per-joint Slerp on local rotations, linear
-  # interpolation on trans; a no-op at 100 Hz (generate_amass_faithful.py:58,209-249).
+  # Every sequence is brought to 100 Hz: per-joint Slerp on local rotations, linear interpolation
+  # on trans; a no-op at 100 Hz.
   resample: {fps: 100, rotations: slerp, translation: linear}
   discontinuity: {settings_key: discontinuity, action: flag}
 
 skip:
-  # Non-finite poses, trans or betas fail the sequence rather than being repaired
-  # (generate_amass_faithful.py:178-182; the Transitions archive has known non-finite frames).
+  # Non-finite poses, trans or betas fail the sequence rather than being repaired (the Transitions
+  # archive has known non-finite frames).
   trials_with_nonfinite_input: true
 
 settings: ../settings/default.yaml

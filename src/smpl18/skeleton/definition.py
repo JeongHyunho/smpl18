@@ -21,6 +21,7 @@ __all__ = [
     "FROZEN_JOINTS",
     "FROZEN_JOINT_NAMES",
     "HAND_JOINTS",
+    "HINGE_AXES",
     "JOINT18_NAMES",
     "JOINT_NAMES",
     "KEEP18",
@@ -62,6 +63,11 @@ BODY_JOINT_NAMES: tuple[str, ...] = tuple(JOINT_NAMES[j] for j in BODY_JOINTS)
 #: sources do not drive at all. Each becomes one constant per subject, fitted by ``smpl18.reduce``.
 FROZEN_JOINTS: tuple[int, ...] = (3, 6, 13, 14)
 FROZEN_JOINT_NAMES: tuple[str, ...] = tuple(JOINT_NAMES[j] for j in FROZEN_JOINTS)
+
+#: The knees and elbows are hinges in the body but ball joints in SMPL. In SMPL's rest frame the
+#: knees flex about the local x axis and the elbows (arms out to the sides) about the local y
+#: axis; a fit uses this to keep off-axis rotation, which positions cannot see, small.
+HINGE_AXES: Mapping[int, int] = MappingProxyType({4: 0, 5: 0, 18: 1, 19: 1})
 
 #: The kept joint just below each frozen one, which takes over its rotation. Freezing a joint
 #: would turn the whole chain below it; the absorber undoes exactly that, so no distal world

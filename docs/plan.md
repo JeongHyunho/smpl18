@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | in progress: formats, profiles, model and skeleton are in; the fitting, repair and corpus layers are next (§5) |
-| Last updated | 2026-09-16 |
+| Status | in progress: every source kind converts file by file (`smpl18 convert ...`) into the corpus; profile-driven dataset conversion is next (§5) |
+| Last updated | 2026-09-17 |
 | Scope | this document states what the package is for, how it is arranged, and what remains. The skeleton itself is explained in [`primer.md`](primer.md); the on-disk result in [`corpus-format.md`](corpus-format.md); a profile field by field in [`profile-schema.md`](profile-schema.md) |
 
 ---
@@ -41,13 +41,15 @@ means writing a profile, never a module.
    and the profile and settings that produced it.
 4. The body model handled honestly: selected per subject by gender, located explicitly, hashed,
    never bundled.
-5. Documentation with a quick start a new user can follow in ten minutes.
+5. Documentation with a quick start a new user can follow in ten minutes, and a runnable
+   example for every kind of input.
 
 **Non-goals**
 
 - Sensor synthesis, dataset-specific bundle formats, and dataset licensing or governance: a
   consumer's concern, not this package's.
-- Mesh-level (marker-to-vertex) fitting in 0.1; marker input goes through joint centres first (§4.3).
+- Mesh-level (marker-to-vertex) fitting in 0.1; marker input goes through joint centres and
+  segment frames first (§3.5).
 - Anything that reads or writes body-model files or motion data inside this repository.
 
 ---
@@ -59,38 +61,33 @@ smpl18/
 ├── README.md  CHANGELOG.md  LICENSE  pyproject.toml
 ├── docs/
 │   ├── plan.md               this document
-│   ├── primer.md             SMPL-24 and how to reach it from SMPL or markers
+│   ├── primer.md             SMPL-24, reaching it from SMPL or markers, the 18-joint reduction
 │   ├── corpus-format.md      the on-disk corpus, versioned
 │   ├── profile-schema.md     what a profile may say, field by field
 │   └── kinds/                one page per source kind
 ├── configs/                  DATA, never code
 │   ├── profiles/             one file per dataset
-│   ├── correspondence/       source joint/body names -> SMPL-24 joints, fill rules, trunk body, lumbar split
-│   ├── markersets/           marker labels -> joint-centre rules
+│   ├── correspondence/       source joint/centre names -> SMPL-24 joints, fill rules, lumbar block
+│   ├── markersets/           marker labels -> joint-centre rules and segment frames
 │   ├── offsets/              landmark offset tables
-│   └── settings/             filter cut-offs, joint-rate limits, IK weights, joint ranges
+│   └── settings/             every number the engine uses
+├── examples/                 one runnable script per kind of input, on synthetic captures
 ├── src/smpl18/
-│   ├── __init__.py  cli.py
-│   ├── model/        extract.py  load.py  select.py
+│   ├── __init__.py  cli.py  convert.py  corpus.py  synthetic.py
+│   ├── model/        extract.py  load.py  select.py  demo.py (the stand-in body)
 │   ├── skeleton/     definition.py  rotations.py  kinematics.py  frames.py
 │   ├── formats/      npz.py  pickle_safe.py  jsonfile.py  osim.py  mot.py  trc.py  c3d.py  b3d.py  bvh.py  mat.py  _vendor/
-│   ├── sources/      base.py (the four kind dataclasses)
-│   │   ├── parameters/   SMPL-family parameter streams
-│   │   ├── skeleton/     articulated-skeleton motion (OpenSim-style and BVH-style FK)
-│   │   ├── centres/      joint-centre trajectories
-│   │   └── markers/      surface markers -> joint centres
-│   ├── profile/      schema.py  load.py  bind.py  layout.py
-│   ├── fit/          shape.py  correspondence.py  pose_transfer.py  pose_ik.py  root.py
-│   ├── repair/       wrap.py  resample.py  discontinuity.py
-│   ├── corpus/       schema.py  write.py  read.py  summary.py
-│   ├── validate/     fk_reproduction.py  bone_lengths.py  joint_ranges.py  roundtrip.py
-│   └── convert.py    kind -> SMPL-24 pipelines, one per kind, driven by a bound profile
-└── tests/            mirrors src/; profile fixtures are tiny YAML files over synthetic data
+│   ├── sources/      base.py (the four kinds)  markers.py (marker sets)  subject.py
+│   │   └── skeleton/     opensim.py  bvh.py (forward kinematics of articulated skeletons)
+│   ├── fit/          targets.py  correspondence.py  shape.py  pose.py
+│   ├── reduce/       fixation.py  fit.py  residual.py
+│   └── profile/      schema.py  load.py  bind.py  layout.py
+└── tests/            mirrors src/; synthetic fixtures and the stand-in body only
 ```
 
 The dependency direction is fixed: `formats` know nothing about kinds; `sources` know nothing
 about datasets; `fit`/`repair`/`corpus` know nothing about formats; `profile` binds them; only
-`convert` and `cli` see the whole picture. No module imports a profile by name, and a test greps
+`convert` and `cli` see the whole picture. `synthetic` serves the examples and tests only. No module imports a profile by name, and a test greps
 `src/` for the shipped profile ids so that no dataset name can creep into code.
 
 ---
@@ -170,21 +167,43 @@ through `SHARED_DATASET_PATH`, which mirrors the `configs/` layout.
 None of these needed a Python file. That is the test of the design: if a dataset needs code, the
 code belongs to a kind or a format, and the profile only points at it.
 
-### 3.5 Fit, repair, corpus, validate
+### 3.5 Targets, fit, corpus
 
-- `fit.shape`: bone-length least squares with regularisation and optional stature and volume terms;
-  a rest-skeleton rescale that records that it happened; skeleton pooling across trials.
-- `fit.correspondence`: names → SMPL joints; the fill rule `weld` / `distribute` / `estimate` per
-  missing joint; trunk body; lumbar split; aliases; demotion of joints nothing observed.
-- `fit.pose_transfer` (segment rotations with a calibration alignment), `fit.pose_ik` (Kabsch
-  initialisation, least squares with angle regularisation and temporal smoothing), `fit.root`.
-- `repair.wrap` (unwrap before filtering, only the named coordinates), `repair.resample` (slerp for
-  rotations, linear for translation), `repair.discontinuity` (flag, never edit).
-- `corpus` writes and reads the format in `corpus-format.md`; every manifest carries the profile id
-  and hash, the settings used, the source hashes, the converter version and commit, and the
-  provenance codes.
-- `validate` reports forward-kinematics reproduction against the source observations, bone-length
-  residuals, joint-range coverage, and a round trip for `smpl_parameters` input.
+Every kind but SMPL parameters is first brought to **targets** in the corpus frame
+(`smpl18.fit.targets`): positions of SMPL joint centres, and optionally orientations of the
+segments SMPL joints move, each column with a weight and a validity mask. A marker set
+(`sources.markers`) derives both from markers; a skeleton's forward kinematics
+(`sources.skeleton`) and a correspondence table (`fit.correspondence`) derive both from a
+skeleton; a correspondence table maps a joint-centre file's labels. Provenance follows from which
+joints the targets reach: `measured` when the joint's bone is seen at both ends or its segment is
+oriented, `derived` when only something below it is seen, `absent` otherwise (held at identity);
+a table's `fill` rules override the last two.
+
+- `fit.shape`: betas from the median lengths of the observed rigid pairs (bones and siblings),
+  then refined by alternating a pose solve on sampled frames with a closed-form beta solve against
+  every target (each frame's translation eliminated), so the trunk counts too. Both objectives
+  are mean squared distances plus one beta prior.
+- `fit.pose`: per frame, Levenberg-Marquardt with an analytic Jacobian over the translation, the
+  root's world rotation (updated on the group) and a rotation vector per free joint (updated
+  additively, which keeps the prior linear). Residuals: joint centres; segment orientations after
+  a per-target constant calibrated from positions-only passes over all of the subject's trials; a pose prior, heavier on the four
+  joints the corpus freezes (so a turn the targets cannot place goes to the joints that keep it)
+  and on the knees' and elbows' off-hinge rotation (which positions cannot see); an optional
+  smoothing pass. Frames are solved in batches; one with too few targets holds its neighbour
+  and is marked invalid.
+- `corpus` writes and reads the format in `corpus-format.md`, rebuilds the 24-joint pose from a
+  trial and its subject record, and keeps `SUMMARY.json` in step with the directory. A subject is
+  written once with all its trials; writing it again needs `--replace`, and a reader refuses a
+  trial its subject record does not list.
+- Plausibility checks (`checks` settings) warn about what converts without an error but cannot
+  be a person: bones outside a human range (a wrong length unit), a stored pose far from the
+  source, a trunk that is seldom upright (a wrong up axis).
+- Every manifest carries the source files and hashes, the tables used and what they missed, the
+  repairs, the settings, the converter version and commit, and the joint-centre error against the
+  source's own targets before and after the reduction.
+
+Still to come with profile-driven conversion: the wrap repair, resampling and the discontinuity
+scan (`repair`), and the profile features that use them.
 
 ### 3.6 Reduction to 18 joints (`smpl18.reduce`)
 
@@ -215,19 +234,24 @@ cannot disagree silently about it.
 ### 3.8 CLI
 
 ```
-smpl18 extract-model --pkl <file> --gender <g> --out <dir>
-smpl18 convert --profile <profile.yaml> --input <root> --models <dir> --out <corpus>
-smpl18 convert --kind <kind> --format <fmt> [--correspondence ...] [--markerset ...] --settings ... \
-               --input <file-or-root> --models <dir> --out <corpus>      # ad hoc, no profile
-smpl18 profile validate <name-or-path>
-smpl18 profile show <name-or-path>          # resolved bindings, referenced files and their hashes
+smpl18 convert markers  --input <trc/c3d>... --markerset <yaml> --up-axis <x|y|z> ...
+smpl18 convert centres  --input <trc/c3d/npz>... --correspondence <yaml> --up-axis <x|y|z> ...
+smpl18 convert opensim  --osim <model> --mot <mot/sto>... --correspondence <yaml> ...
+smpl18 convert bvh      --input <bvh>... --correspondence <yaml> --up-axis <x|y|z> --length-unit <m|cm|mm> ...
+smpl18 convert smpl     --input <npz>... --up-axis <x|y|z> [--fps] ...
+    common: --settings <yaml>... --models <dir> --out <corpus>
+            (--subject <yaml> | --subject-id <id> --gender <g>) [--measurement NAME=METRES]...
+smpl18 extract-model --pkl <file> --gender <g> --num-betas <n> --out <dir> [--with-mesh]
+smpl18 demo-models --out <dir>
+smpl18 info <corpus> [--json]
 smpl18 fbx2bvh --input <clip.fbx> --blender <exe> --out <clip.bvh>
-smpl18 info <corpus>
-smpl18 validate <corpus> [--against <source>]
+smpl18 profile validate <name-or-path>
+smpl18 profile show <name-or-path>
 ```
 
-A subcommand is added only together with the module it fronts, so no command exists without an
-implementation.
+The `convert` subcommands are named after the data a user has, not after the source kinds,
+because that is the question a user starts from; the manifest records the kind. A subcommand is
+added only together with the module it fronts, so no command exists without an implementation.
 
 ---
 
@@ -253,11 +277,14 @@ implementation.
 | Formats: osim, mot, trc, c3d, b3d, bvh, npz, json, mat, whitelisted pickle | **done** |
 | Profiles: schema, loader, layout discovery, parameter binding, `profile validate` / `show` | **done** |
 | Reduction to 18 joints with the fitted constants (`smpl18.reduce`) | **done** |
-| Sources: skeleton FK models, joint-centre and marker kinds | next |
-| Fit: shape, correspondence, pose transfer, position IK, root | next |
-| Repair and corpus: wrap, resample, discontinuity; corpus write, read, summary | after fit |
-| `convert` and the remaining CLI commands, one per kind | after corpus |
-| Round-trip tests per format (synthesise SMPL-24 motion, export, convert back, compare) | with each new format |
+| Sources: OpenSim and BVH forward kinematics, marker sets, joint-centre files, subject files | **done** |
+| Fit: targets, correspondence tables, shape, per-frame pose with calibrated orientations | **done** |
+| Corpus: write, read, summary, 24-joint rebuild | **done** |
+| `convert markers / centres / opensim / bvh / smpl`, `info`, `extract-model`, `demo-models`, `fbx2bvh` | **done** |
+| Examples for every kind, run as tests; round trips per format on synthetic captures | **done** |
+| Repair: wrap, resample, discontinuity scan | next |
+| `convert --profile`: whole datasets through their profiles (layout, bindings, pooling, repairs) | next |
+| Validation against real captures with independent joint centres | with the first real corpus |
 | 0.1.0: semantic versioning, changelog, release checklist | when a corpus can be produced end to end |
 
 ---

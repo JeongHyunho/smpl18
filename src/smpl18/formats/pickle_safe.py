@@ -142,11 +142,10 @@ def load(path: str | Path, *, allow: frozenset[tuple[str, str]] = frozenset()) -
     pickles rebuild dtypes with an idiom numpy deprecates; that warning is about the asset's
     encoding, not about this code, and is silenced for the duration of the load only.
     """
-    with open(path, "rb") as handle:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            warnings.simplefilter("ignore", np.exceptions.VisibleDeprecationWarning)
-            return SafeUnpickler(handle, allow=allow, encoding="latin1").load()
+    with open(path, "rb") as handle, warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        warnings.simplefilter("ignore", np.exceptions.VisibleDeprecationWarning)
+        return SafeUnpickler(handle, allow=allow, encoding="latin1").load()
 
 
 def to_array(value: Any) -> np.ndarray:

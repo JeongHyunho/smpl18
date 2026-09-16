@@ -1,29 +1,145 @@
-"""Command-line entry point.
+"""Command-line entry point: ``smpl18 <command>``.
 
-``--version`` and the ``profile`` group exist. The remaining subcommands the README specifies
-(``extract-model``, ``convert``, ``fbx2bvh``, ``info``, ``validate``) are added with the
-migration phases in docs/plan.md, each together with the module it fronts, so that no command
-ever exists without an implementation.
+Commands::
+
+    convert markers   labelled markers (.trc/.c3d) + a marker set
+    convert centres   joint-centre trajectories (.trc/.c3d/.npz) + a correspondence
+    convert opensim   an OpenSim model (.osim) + coordinate files (.mot/.sto) + a correspondence
+    convert bvh       BVH clips + a correspondence
+    convert smpl      SMPL / SMPL-H parameter files (.npz)
+    extract-model     licensed SMPL .pkl -> clean .npz the converters read
+    demo-models       write the stand-in body model, for trying the pipeline
+    info              what a corpus holds and how well each trial was reproduced
+    fbx2bvh           FBX -> BVH through an installed Blender
+    profile           validate or show a dataset profile
+
+Every ``convert`` writes one subject: its trials, fitted together, into ``--out``. Numbers come
+from ``--settings``; nothing numeric is defaulted here.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
+from pathlib import Path
 
 import yaml
 
 from smpl18 import __version__
+from smpl18.model.select import GENDERS
 from smpl18.profile import Profile, ProfileLoadError, ProfileSchemaError
+
+AXES = ("x", "y", "z")
+#: The source kind each convert subcommand reads.
+KINDS = {"markers": "marker_trajectories", "centres": "joint_centres",
+         "opensim": "skeleton_motion", "bvh": "skeleton_motion", "smpl": "smpl_parameters"}
+LENGTH_UNITS = ("m", "cm", "mm")
+
+
+# --- parser --------------------------------------------------------------------------------------
+
+
+def _subject_options(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_argument_group("subject")
+    group.add_argument("--subject", type=Path,
+                       help="subject file (smpl18_subject_v1): id, gender, measurements")
+    group.add_argument("--subject-id", help="the subject's id (overrides the file's)")
+    group.add_argument("--gender", choices=GENDERS,
+                       help="selects the body model (overrides the file's)")
+    group.add_argument("--measurement", action="append", default=[], metavar="NAME=METRES",
+                       help="a subject measurement (repeatable; overrides the file's)")
+
+
+def _common_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--out", required=True, type=Path, help="corpus directory to write into")
+    parser.add_argument("--settings", required=True, action="append", type=Path,
+                        help="settings file(s); later files update earlier ones")
+    parser.add_argument("--models", type=Path,
+                        help="directory with SMPL_<GENDER>_clean.npz (else $SMPL18_MODELS)")
+    parser.add_argument("--quiet", action="store_true", help="print only the final summary")
+    parser.add_argument("--replace", action="store_true",
+                        help="convert a subject already in the corpus anew, removing its trials")
+    _subject_options(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="smpl18",
-        description="Convert motion capture into an SMPL-24 pose corpus.",
+        description="Convert motion capture into an 18-joint reduced SMPL pose corpus.",
     )
     parser.add_argument("--version", action="version", version=f"smpl18 {__version__}")
     commands = parser.add_subparsers(dest="command")
+
+    convert = commands.add_parser("convert", help="convert one subject's trials into a corpus")
+    kinds = convert.add_subparsers(dest="kind", required=True)
+
+    markers = kinds.add_parser("markers", help="labelled surface markers (.trc / .c3d)")
+    markers.add_argument("--input", required=True, nargs="+", type=Path, help="marker files, one per trial")
+    markers.add_argument("--markerset", required=True, type=Path, help="marker-set description (YAML)")
+    markers.add_argument("--up-axis", required=True, choices=AXES, help="the files' vertical axis")
+    markers.add_argument("--occlusion-sentinel", choices=("none", "zero"), default="none",
+                         help="'zero' reads an exact (0, 0, 0) sample as a lost marker")
+    _common_options(markers)
+
+    centres = kinds.add_parser("centres", help="joint-centre trajectories (.trc / .c3d / .npz)")
+    centres.add_argument("--input", required=True, nargs="+", type=Path)
+    centres.add_argument("--correspondence", required=True, type=Path,
+                         help="table naming which centre is which SMPL joint (names: centres)")
+    centres.add_argument("--up-axis", required=True, choices=AXES)
+    _common_options(centres)
+
+    opensim = kinds.add_parser("opensim", help="an OpenSim model with coordinate files")
+    opensim.add_argument("--osim", required=True, type=Path, help="the (scaled) model")
+    opensim.add_argument("--mot", required=True, nargs="+", type=Path,
+                         help="coordinate files (.mot / .sto), one per trial")
+    opensim.add_argument("--correspondence", required=True, type=Path)
+    opensim.add_argument("--up-axis", choices=AXES,
+                         help="only for a model that declares no gravity")
+    opensim.add_argument("--angle-unit", choices=("deg", "rad"),
+                         help="only for a file whose header does not say inDegrees")
+    _common_options(opensim)
+
+    bvh = kinds.add_parser("bvh", help="BVH clips")
+    bvh.add_argument("--input", required=True, nargs="+", type=Path)
+    bvh.add_argument("--correspondence", required=True, type=Path)
+    bvh.add_argument("--up-axis", required=True, choices=AXES)
+    bvh.add_argument("--length-unit", required=True, choices=LENGTH_UNITS,
+                     help="the unit of the file's offsets and positions")
+    _common_options(bvh)
+
+    smpl = kinds.add_parser("smpl", help="SMPL / SMPL-H parameters (.npz)")
+    smpl.add_argument("--input", required=True, nargs="+", type=Path)
+    smpl.add_argument("--up-axis", required=True, choices=AXES)
+    smpl.add_argument("--fps", type=float, help="frame rate, when the files store none")
+    smpl.add_argument("--poses-key", default="poses")
+    smpl.add_argument("--trans-key", default="trans")
+    smpl.add_argument("--betas-key", default="betas")
+    _common_options(smpl)
+
+    extract = commands.add_parser("extract-model",
+                                  help="licensed SMPL .pkl -> clean .npz (no pickle code runs)")
+    extract.add_argument("--pkl", required=True)
+    extract.add_argument("--gender", required=True, choices=GENDERS)
+    extract.add_argument("--out", required=True)
+    extract.add_argument("--num-betas", type=int, required=True,
+                         help="shape directions to keep (the SMPL files carry 10 or 300)")
+    extract.add_argument("--with-mesh", action="store_true",
+                         help="also keep the skinning weights, pose blend shapes and faces")
+
+    demo = commands.add_parser("demo-models",
+                               help="write the stand-in body (not SMPL) to try the pipeline")
+    demo.add_argument("--out", required=True, type=Path)
+
+    info = commands.add_parser("info", help="summarise a corpus")
+    info.add_argument("corpus", type=Path)
+    info.add_argument("--json", action="store_true", help="print the summary as JSON")
+
+    fbx = commands.add_parser("fbx2bvh", help="export an FBX animation to BVH with Blender")
+    fbx.add_argument("--input", required=True, type=Path)
+    fbx.add_argument("--out", required=True, type=Path)
+    fbx.add_argument("--blender", required=True, help="the Blender executable")
 
     profile = commands.add_parser(
         "profile", help="validate or show a dataset profile (a name or a path)"
@@ -38,6 +154,237 @@ def build_parser() -> argparse.ArgumentParser:
     )
     show.add_argument("profile", help="a shipped profile name or a path to a YAML file")
     return parser
+
+
+# --- convert -------------------------------------------------------------------------------------
+
+
+class CommandError(Exception):
+    pass
+
+
+def _measurements(items: list[str]) -> dict[str, float]:
+    out = {}
+    for item in items:
+        name, sep, value = item.partition("=")
+        if not sep:
+            raise CommandError(f"--measurement expects NAME=METRES, got {item!r}")
+        try:
+            out[name.strip()] = float(value)
+        except ValueError:
+            raise CommandError(f"--measurement {name}: {value!r} is not a number") from None
+    return out
+
+
+def _subject(args):
+    from smpl18.sources.subject import SubjectInfo
+
+    extra = _measurements(args.measurement)
+    if args.subject is not None:
+        return SubjectInfo.load(args.subject).with_overrides(
+            id=args.subject_id, gender=args.gender, measurements=extra
+        )
+    if not args.subject_id or not args.gender:
+        raise CommandError("give --subject FILE, or both --subject-id and --gender")
+    return SubjectInfo(id=args.subject_id, gender=args.gender, measurements=extra)
+
+
+def _unique_ids(trials) -> None:
+    seen = set()
+    for trial in trials:
+        if trial.id in seen:
+            raise CommandError(f"two inputs share the trial name {trial.id!r}; rename one")
+        seen.add(trial.id)
+
+
+def _arguments(args) -> dict:
+    skip = {"command", "kind", "quiet", "settings", "models", "out", "replace"}
+    out = {}
+    for key, value in vars(args).items():
+        if key in skip or value is None:
+            continue
+        if isinstance(value, Path):
+            value = value.name
+        elif isinstance(value, list):
+            value = [v.name if isinstance(v, Path) else v for v in value]
+        out[key] = value
+    return out
+
+
+def convert(args) -> int:
+    from smpl18 import convert as pipeline
+    from smpl18.fit.correspondence import Correspondence
+    from smpl18.model.load import Model
+    from smpl18.sources.markers import MarkerSet
+
+    say = (lambda message: None) if args.quiet else (lambda message: print(message, flush=True))
+    settings, settings_files = pipeline.load_settings(args.settings)
+    pipeline.validate_settings(settings, KINDS[args.kind])
+    subject = _subject(args)
+    pipeline.check_subject_free(args.out, subject.id, replace=args.replace)
+    model = Model.for_gender(subject.gender, root=args.models)
+    if model.stand_in:
+        print("note: the body model is the stand-in from `smpl18 demo-models`, not SMPL",
+              file=sys.stderr)
+    trials = []
+    if args.kind == "markers":
+        markerset = MarkerSet.load(args.markerset)
+        for path in args.input:
+            say(f"read {path.name}")
+            trials.append(pipeline.marker_trial(
+                path, markerset=markerset, subject=subject, up_axis=args.up_axis,
+                settings=settings, occlusion_sentinel=args.occlusion_sentinel,
+            ))
+    elif args.kind == "centres":
+        table = Correspondence.load(args.correspondence)
+        for path in args.input:
+            say(f"read {path.name}")
+            trials.append(pipeline.centre_trial(path, correspondence=table,
+                                                up_axis=args.up_axis, settings=settings))
+    elif args.kind == "opensim":
+        table = Correspondence.load(args.correspondence)
+        for path in args.mot:
+            say(f"read {args.osim.name} + {path.name}")
+            trials.append(pipeline.opensim_trial(
+                args.osim, path, correspondence=table, settings=settings,
+                up_axis=args.up_axis, angle_unit=args.angle_unit,
+            ))
+    elif args.kind == "bvh":
+        table = Correspondence.load(args.correspondence)
+        for path in args.input:
+            say(f"read {path.name}")
+            trials.append(pipeline.bvh_trial(path, correspondence=table, up_axis=args.up_axis,
+                                             length_unit=args.length_unit, settings=settings))
+    else:
+        for path in args.input:
+            say(f"read {path.name}")
+            trials.append(pipeline.parameter_trial(
+                path, model=model, up_axis=args.up_axis, settings=settings, fps=args.fps,
+                poses_key=args.poses_key, trans_key=args.trans_key, betas_key=args.betas_key,
+            ))
+    _unique_ids(trials)
+    fit = pipeline.fit_subject(model, trials, settings, progress=say)
+    profile = {"id": "adhoc", "command": f"convert {args.kind}", "arguments": _arguments(args)}
+    summary = pipeline.write_subject_corpus(
+        args.out, subject=subject, model=model, trials=trials, fit=fit, settings=settings,
+        settings_files=settings_files, profile=profile, replace=args.replace,
+    )
+    print(f"wrote subject {subject.id}: {len(trials)} trial(s) -> {args.out}")
+    if fit.shape is not None:
+        print(f"  shape: bone RMS {fit.shape.bone_rms_m * 1000:.1f} mm over "
+              f"{len(fit.shape.bones)} bones")
+    for trial in trials:
+        pose = fit.poses[trial.id]
+        if pose is not None:
+            print(f"  {trial.id}: {int(pose.frame_valid.sum())}/{pose.frame_valid.size} frames, "
+                  f"joint-centre RMS {pose.position_error.rms * 1000:.1f} mm")
+    constants = fit.constants
+    print(f"  reduction: freeze cost RMS {constants.fitted.rms_m * 1000:.1f} mm "
+          f"(mean-rotation guess {constants.initial.rms_m * 1000:.1f} mm)")
+    print(f"  corpus now holds {summary['subjects']} subject(s), {summary['trials']} trial(s)")
+    record = json.loads((args.out / subject.id / "subject.json").read_text(encoding="utf-8"))
+    for warning in record.get("checks", []):
+        print(f"warning: {warning}", file=sys.stderr)
+    return 0
+
+
+def _mm(value) -> str:
+    return "n/a" if value is None else f"{value * 1000:.1f} mm"
+
+
+# --- other commands ------------------------------------------------------------------------------
+
+
+def info(args) -> int:
+    from smpl18.corpus import read_corpus
+
+    corpus = read_corpus(args.corpus)
+    if args.json:
+        print(json.dumps(corpus.summary, indent=2))
+        return 0
+    summary = corpus.summary
+    print(f"{args.corpus}: {summary['subjects']} subject(s), {summary['trials']} trial(s), "
+          f"{summary['frames']} frames; source {summary['source_kind']} / {summary['format']}")
+    for subject in corpus.subjects():
+        record = subject.record
+        reduced = record["reduced_model"]["fit"]
+        stand_in = "  [stand-in body, not SMPL]" if record.get("model_is_stand_in") else ""
+        print(f"  {subject.id}: {record['gender']}, model {record['model_file']}{stand_in}")
+        if record.get("fit"):
+            print(f"    shape: bone RMS {_mm(record['fit']['bone_rms_m'])}")
+        print(f"    reduction: freeze cost RMS {_mm(reduced['residual_rms_m'])}, "
+              f"max {_mm(reduced['residual_max_m'])}")
+        for warning in record.get("checks", []):
+            print(f"    warning: {warning}")
+        for trial in subject.trials():
+            validation = trial.manifest.get("validation") or {}
+            stored = validation.get("stored_18_joint") or {}
+            error = (f", stored-pose joint-centre RMS {_mm(stored['rms_m'])}"
+                     if stored.get("rms_m") is not None else "")
+            print(f"    {trial.id}: {trial.frames} frames at {trial.fps:g} Hz, "
+                  f"{int(trial.frame_valid.sum())} valid{error}")
+    return 0
+
+
+def demo_models(args) -> int:
+    from smpl18.model.demo import write_models
+
+    for path in write_models(args.out):
+        print(f"wrote {path}")
+    print("these are a stand-in body with the SMPL-24 tree, for trying the pipeline only")
+    return 0
+
+
+def extract_model(args) -> int:
+    from smpl18.model.extract import extract_clean
+
+    result = extract_clean(args.pkl, args.out, gender=args.gender, num_betas=args.num_betas,
+                           with_mesh=args.with_mesh)
+    print(f"wrote {result.path}")
+    for key, shape in result.shapes.items():
+        print(f"    {key:16s} {shape}")
+    return 0
+
+
+#: Run inside Blender: import the FBX into an empty scene and export its first armature to BVH
+#: over the action's frame range, in Blender's frame (Z up) and the scene's units.
+BLENDER_SCRIPT = """
+import sys
+import bpy
+source, target = sys.argv[sys.argv.index("--") + 1:]
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.fbx(filepath=source)
+armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
+if not armatures:
+    raise SystemExit("no armature in " + source)
+armature = armatures[0]
+bpy.context.view_layer.objects.active = armature
+armature.select_set(True)
+action = armature.animation_data.action if armature.animation_data else None
+if action is None:
+    raise SystemExit("the armature in " + source + " has no animation")
+start, end = (int(round(f)) for f in action.frame_range)
+bpy.ops.export_anim.bvh(filepath=target, frame_start=start, frame_end=end)
+"""
+
+
+def blender_command(blender: str, source: Path, target: Path) -> list[str]:
+    return [str(blender), "--background", "--factory-startup", "--python-expr", BLENDER_SCRIPT,
+            "--", str(source), str(target)]
+
+
+def fbx2bvh(args) -> int:
+    command = blender_command(args.blender, args.input.resolve(), args.out.resolve())
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as error:
+        raise CommandError(f"cannot run Blender at {args.blender}: {error}") from error
+    if result.returncode != 0 or not args.out.exists():
+        tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-15:])
+        raise CommandError(f"Blender did not write {args.out}:\n{tail}")
+    print(f"wrote {args.out}. Blender writes Z up (--up-axis z); read one OFFSET line to "
+          "choose --length-unit, since the file keeps the FBX's scale")
+    return 0
 
 
 def _load(name_or_path: str) -> Profile | None:
@@ -70,12 +417,30 @@ def profile_show(name_or_path: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if args.command == "profile":
-        if args.action == "validate":
-            return profile_validate(args.profile)
-        if args.action == "show":
+    parser = build_parser()
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    handlers = {
+        "convert": convert,
+        "info": info,
+        "demo-models": demo_models,
+        "extract-model": extract_model,
+        "fbx2bvh": fbx2bvh,
+    }
+    try:
+        if args.command in handlers:
+            return handlers[args.command](args)
+        if args.command == "profile":
+            if args.action == "validate":
+                return profile_validate(args.profile)
             return profile_show(args.profile)
+    except CommandError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except (ValueError, LookupError, OSError) as error:
+        print(f"error: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+    if args.command is None:
+        parser.print_help()
     return 0
 
 

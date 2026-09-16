@@ -11,7 +11,7 @@ Validation refuses unknown keys anywhere and reports the dotted path of the offe
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from smpl18.sources.base import Format, SourceKind

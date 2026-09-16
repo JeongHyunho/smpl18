@@ -1,4 +1,5 @@
-"""Read an OpenSim-format ``.trc`` marker file into a ``TrcTable``, in the file's own units.
+"""Read an OpenSim-format ``.trc`` marker file into a ``TrcTable``, in the file's own units, and
+write one back.
 
 The layout is five header lines -- file type, the metadata names, the metadata values, the
 marker names, the axis labels -- and some writers add a blank line after the axis row. The
@@ -17,7 +18,7 @@ import numpy as np
 from .errors import FormatError
 from .tables import TrcTable
 
-__all__ = ["read"]
+__all__ = ["read", "write"]
 
 _HEADER_SEARCH_LINES = 8
 _FIRST_MARKER_COLUMN = 2  # after Frame# and Time
@@ -148,3 +149,50 @@ def read(path: str | os.PathLike[str]) -> TrcTable:
         camera_rate_hz=_optional_float(metadata, "CameraRate"),
         metadata=dict(metadata),
     )
+
+
+def write(
+    path: str | os.PathLike[str],
+    labels,
+    positions: np.ndarray,
+    *,
+    rate_hz: float,
+    units: str,
+    valid: np.ndarray | None = None,
+) -> pathlib.Path:
+    """Write ``(frames, markers, 3)`` positions, already in ``units``, as an OpenSim ``.trc``.
+
+    An invalid or non-finite sample is written as empty fields, which :func:`read` reads back as
+    invalid. Frames are numbered from 1 and timed from 0 at ``rate_hz``.
+    """
+    path = pathlib.Path(path)
+    labels = [str(label) for label in labels]
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim != 3 or positions.shape[1:] != (len(labels), 3):
+        raise ValueError(f"positions must be (frames, {len(labels)}, 3), got {positions.shape}")
+    frames = positions.shape[0]
+    mask = np.isfinite(positions).all(axis=2)
+    if valid is not None:
+        mask &= np.asarray(valid, dtype=bool)
+    tab = "\t"
+    rate = f"{float(rate_hz):g}"
+    lines = [
+        tab.join(["PathFileType", "4", "(X/Y/Z)", path.name]),
+        tab.join(["DataRate", "CameraRate", "NumFrames", "NumMarkers", "Units", "OrigDataRate",
+                  "OrigDataStartFrame", "OrigNumFrames"]),
+        tab.join([rate, rate, str(frames), str(len(labels)), units, rate, "1", str(frames)]),
+        tab.join(["Frame#", "Time"] + [tab.join([label, "", ""]) for label in labels]),
+        tab.join(["", ""] + [tab.join([f"X{i}", f"Y{i}", f"Z{i}"])
+                             for i in range(1, len(labels) + 1)]),
+        "",
+    ]
+    for frame in range(frames):
+        fields = [str(frame + 1), f"{frame / float(rate_hz):.6f}"]
+        for marker in range(len(labels)):
+            if mask[frame, marker]:
+                fields.extend(f"{value:.6f}" for value in positions[frame, marker])
+            else:
+                fields.extend(["", "", ""])
+        lines.append(tab.join(fields))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path

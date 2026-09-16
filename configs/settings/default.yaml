@@ -1,8 +1,99 @@
-# Engine settings shared by every profile. Numbers only live here, never in library code: a
+# Engine settings shared by every conversion. Numbers only live here, never in library code: a
 # function that needs one of these takes a settings mapping and fails when the key is missing.
-# These are the values the reference conversions of 2026-09-15 ran with.
+# Pass this file (or a copy you edit) with --settings; the values used are copied into every
+# trial manifest.
 schema: smpl18_settings_v1
 id: default
+
+# --- read by the file-by-file converter (smpl18 convert ...) ------------------------------------
+
+output:
+  # The world frame the corpus is written in. SMPL's own rest frame is Y-up.
+  up_axis: y
+
+shape:
+  # Betas fitted; the model's remaining ones stay zero.
+  betas: 10
+  # Weight of |beta|^2 against the mean squared joint-centre distance (m^2). At 1e-6 a beta
+  # vector of norm 2 costs as much as 2 mm of RMS error, so the betas move whenever they explain
+  # more than that and stay near the mean body otherwise.
+  prior_weight: 1.0e-6
+  # scipy.optimize.least_squares method for the bone-length step.
+  optimiser: trf
+  # Frames the refinement solves poses on, spread over all of the subject's trials.
+  sample_frames: 300
+  # Pose-then-betas rounds after the bone-length step. Each round lets the trunk and every
+  # other chain the targets span inform the shape; two or three settle it.
+  refinements: 2
+
+pose:
+  # Levenberg-Marquardt per frame. A frame stops when no parameter moves more than the
+  # tolerance (radians or metres); twists that only the pose prior holds converge slowly, and
+  # 1e-4 rad (0.006 deg) is far below what any source can observe.
+  iterations: 40
+  tolerance: 1.0e-4
+  damping: 1.0e-3
+  # Residual weights: metres of position error per metre, per radian of orientation error, and
+  # per radian of joint rotation for the prior. An orientation error of 1 rad weighs like 5 cm
+  # of position error: orientations steer twist, positions keep the joints where they belong.
+  position_weight: 1.0
+  orientation_weight: 0.05
+  # The prior holds unobserved twist at rest and shares a turn among joints the targets cannot
+  # tell apart. At 0.01 it moves an observed joint by well under a millimetre.
+  prior_weight: 0.01
+  # The prior on spine1, spine2 and the collars, which the corpus freezes. A turn the targets
+  # cannot place (the trunk's share between spine and collars) then goes to spine3 and the
+  # shoulders, which keep it after the reduction, instead of into joints whose motion the freeze
+  # discards. Ten times the prior above.
+  frozen_prior_weight: 0.1
+  # The prior on the knees' and elbows' rotation off their flexion axis. SMPL gives them three
+  # degrees of freedom where the body has a hinge, so a twisted thigh or upper arm and a knee or
+  # elbow turned sideways place the joints alike; this weight chooses the hinge. Ten times the
+  # prior above; the flexion itself keeps prior_weight.
+  hinge_prior_weight: 0.1
+  # Weight of the smoothing pass towards the mean of the neighbouring frames; 0 skips the
+  # pass. Source trajectories are usually filtered already, so it is off by default.
+  smoothing_weight: 0.0
+  # Frames solved per batch: bounds memory, not the result.
+  chunk_frames: 400
+  # A frame needs this many valid position targets to be solved; otherwise it is marked
+  # invalid and holds its nearest solved pose. Three is the least that fixes a rigid body.
+  min_position_targets: 4
+
+markers:
+  # Interior marker gaps up to this many frames are bridged linearly before the marker-set
+  # rules run; longer gaps and gaps at either end stay invalid. 0 bridges nothing.
+  max_gap_frames: 10
+
+checks:
+  # Plausibility warnings, printed and written to the record; a conversion that trips one still
+  # completes. A measured bone outside this range usually means a wrong length unit (a
+  # centimetre file read as metres makes a thigh 40 m long).
+  bone_length_range_m: [0.03, 0.8]
+  # A stored pose further than this (RMS) from the source's joint centres suggests a wrong unit,
+  # table or measurement; good captures sit at a centimetre or two.
+  max_position_rms_m: 0.05
+  # The trunk (pelvis to neck) counts as upright within 60 degrees of the up axis (cosine 0.5).
+  # When fewer than half the frames are upright, the up axis is probably wrong -- or the trial
+  # was spent lying down, which is then worth a look anyway.
+  upright_min_cosine: 0.5
+  upright_min_fraction: 0.5
+
+# --- read by the 18-joint reduction ---------------------------------------------------------------
+
+reduce:
+  # The corpus stores 18 joints: spine1, spine2 and both collars are frozen to per-subject
+  # constants and the hands are dropped. The constants are fitted, not assumed, because a wrong
+  # constant displaces every joint below the freeze while leaving orientations exact.
+  # Most frames the fit measures; a longer trial is sampled evenly down to this, so a long take
+  # costs no more to fit than a short one.
+  sample_frames: 1500
+  # scipy.optimize.least_squares method for the twelve parameters (four rotation vectors).
+  optimiser: lm
+  # Cap on residual evaluations, so a pathological subject cannot stall a corpus.
+  max_evaluations: 200
+
+# --- read by profile-driven dataset conversions (on the roadmap; see docs/plan.md) -------------
 
 shape_fit:
   n_betas: 10                     # shape parameters solved for
@@ -25,9 +116,9 @@ pose_transfer:
   direction_norm_floor: 1.0e-12
 
 wrap:
-  # Read from each trial's own lowPassFilter pass header when the profile says
-  # filter: declared_by_source. These are the values all 40,537 filtered passes of the
-  # AddBiomechanics cohort declare, with no exception; used when filter: from_settings.
+  # Used when a profile says filter: from_settings; filter: declared_by_source reads the values
+  # from each trial's own low-pass filter record instead. A second-order 30 Hz Butterworth is
+  # what .b3d containers commonly declare.
   filter_order: 2
   filter_cutoff_hz: 30.0
   # filtfilt pads with 3 * max(len(a), len(b)) samples; below that a wrapping column cannot be
@@ -43,25 +134,13 @@ resample:
   min_frames_after: 4
 
 discontinuity:
-  # The blow-up band, in deg/s, shared with the gyro check; divided by the frame rate it is the
-  # largest step any joint's global rotation may take between adjacent frames.
+  # The blow-up band, in deg/s: divided by the frame rate it is the largest step any joint's
+  # global rotation may take between adjacent frames.
   gyro_abs_max_deg_s: 8000.0
   # Pelvis-to-spine3 median angle above which a take's trunk is inverted, not bent.
   trunk_inversion_limit_deg: 150.0
   # Which SMPL joints the trunk angle is measured between.
   trunk_joints: [pelvis, spine3]
-
-reduce:
-  # The corpus stores 18 joints: spine1, spine2 and both collars are frozen to per-subject
-  # constants and the hands are dropped. The constants are fitted, not assumed, because a wrong
-  # constant displaces every joint below the freeze while leaving orientations exact.
-  # Most frames the fit measures; a longer trial is sampled evenly down to this, so a long take
-  # costs no more to fit than a short one.
-  sample_frames: 1500
-  # scipy.optimize.least_squares method for the twelve parameters (four rotation vectors).
-  optimiser: lm
-  # Cap on residual evaluations, so a pathological subject cannot stall a corpus.
-  max_evaluations: 200
 
 frames:
   # Whole trials are converted unless a profile's settings say otherwise.

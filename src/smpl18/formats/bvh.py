@@ -18,7 +18,7 @@ import numpy as np
 
 from .errors import FormatError
 
-__all__ = ["BvhFile", "BvhJoint", "CHANNEL_NAMES", "parse", "read"]
+__all__ = ["CHANNEL_NAMES", "BvhFile", "BvhJoint", "parse", "read"]
 
 CHANNEL_NAMES = frozenset(
     {"Xposition", "Yposition", "Zposition", "Xrotation", "Yrotation", "Zrotation"}

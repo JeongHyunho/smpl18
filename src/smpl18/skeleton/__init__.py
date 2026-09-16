@@ -27,18 +27,18 @@ from .kinematics import (
 )
 
 __all__ = [
-    "BODY_JOINT_NAMES",
     "BODY_JOINTS",
+    "BODY_JOINT_NAMES",
     "CHILDREN",
-    "FrameChange",
     "HAND_JOINTS",
     "JOINT_NAMES",
     "NUM_JOINTS",
     "PARENTS",
     "PARENTS_ARRAY",
     "ROOT",
-    "SEGMENT_NAMES",
     "SEGMENTS",
+    "SEGMENT_NAMES",
+    "FrameChange",
     "children_of",
     "fk",
     "fk_batch",

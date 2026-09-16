@@ -6,14 +6,15 @@ dist/
 .pytest_cache/
 .ruff_cache/
 
-# Local editor and tool state: never part of the package
-.omc/
-.claude/
+# Editor state
 .vscode/
 .idea/
 
 # Never commit body models or motion data (see README: Body models and licences)
 *.pkl
 *.npz
+*.c3d
 models/
 corpus/
+# What the examples write
+example-output/

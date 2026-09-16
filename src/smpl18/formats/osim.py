@@ -11,31 +11,148 @@ the concrete type (``LinearFunction``, ``SimmSpline``, ``MultiplierFunction``), 
 ``<function>`` element. Both are read. Looking only for the wrapper finds nothing in the first
 style and makes every joint look rotation-only, which in turn claims the femur and tibia hold a
 constant distance across a walker knee. They do not.
+
+The kinematic description (joint frames, transform axes, functions, coordinate details, coupler
+constraints) is kept exactly as written: numbers are parsed, nothing is evaluated, and a property
+the file leaves out stays out (``None``, or a missing key) so that the skeleton model evaluating
+it is the one place OpenSim's own defaults are applied. Offset frames are the one exception: an
+omitted ``translation`` or ``orientation`` is OpenSim's zero, which is also what a socket naming
+a body directly means, so both read as zeros.
 """
 
 from __future__ import annotations
 
 import os
 import pathlib
+import types
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from .errors import FormatError
 
-__all__ = ["OsimJoint", "OsimMarker", "OsimModel", "parse", "read"]
+__all__ = [
+    "OsimCoordinate",
+    "OsimCouplerConstraint",
+    "OsimFrame",
+    "OsimFunction",
+    "OsimJoint",
+    "OsimMarker",
+    "OsimModel",
+    "OsimTransformAxis",
+    "parse",
+    "read",
+]
 
 _AXIS_METADATA_TAGS = frozenset({"coordinates", "axis"})
+_ZERO = (0.0, 0.0, 0.0)
+_GROUND = "ground"
+#: Function elements whose knots are ``x`` and ``y``. The two spline spellings besides
+#: ``SimmSpline`` are older names OpenSim still accepts for it.
+_KNOT_FUNCTIONS = frozenset(
+    {"SimmSpline", "NaturalCubicSpline", "natCubicSpline", "PiecewiseLinearFunction"}
+)
+
+Vector3 = tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class OsimFrame:
+    """A joint's parent or child frame, expressed in the body it is fixed to.
+
+    ``orientation`` is OpenSim's body-fixed X-Y-Z Euler angles in radians, as written. A socket
+    that names a body (or ``ground``) directly is that body's own frame and reads as zeros.
+    """
+
+    body: str
+    translation: Vector3
+    orientation: Vector3
+    #: The offset frame's own name; ``None`` when the socket names the body itself.
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class OsimFunction:
+    """One OpenSim function element as data: its type tag and the properties it wrote.
+
+    ``values`` holds only what the file declares: ``value`` (``Constant``), ``coefficients``
+    (``LinearFunction``, ``PolynomialFunction``), ``x`` and ``y`` (the splines and
+    ``PiecewiseLinearFunction``), ``half_order`` and ``error_variance`` besides (``GCVSpline``),
+    ``scale`` and the nested ``function`` (``MultiplierFunction``). Sequences are tuples of
+    floats. A type not listed keeps its tag and no values.
+    """
+
+    kind: str
+    #: Read-only; left out of the hash so that joints and models stay hashable.
+    values: Mapping[str, object] = field(hash=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", types.MappingProxyType(dict(self.values)))
+
+
+@dataclass(frozen=True)
+class OsimTransformAxis:
+    """One axis of a ``CustomJoint``'s spatial transform (``rotation1`` .. ``translation3``)."""
+
+    name: str
+    coordinates: tuple[str, ...]
+    #: The axis as written, not normalised; ``None`` when the file leaves it out.
+    axis: Vector3 | None
+    function: OsimFunction | None
+
+
+@dataclass(frozen=True)
+class OsimCoordinate:
+    """A coordinate a joint declares, with the properties that say how to evaluate it."""
+
+    name: str
+    #: ``None`` when the file does not declare one.
+    default_value: float | None
+    #: True only when the file says so.
+    locked: bool
+    #: ``rotational`` / ``translational`` / ``coupled`` when the file declares one (files older
+    #: than OpenSim 4 do), else ``None``.
+    motion_type: str | None
+
+
+@dataclass(frozen=True)
+class OsimCouplerConstraint:
+    """A ``CoordinateCouplerConstraint``: ``dependent = scale_factor * function(independent)``."""
+
+    name: str
+    independent: tuple[str, ...]
+    dependent: str
+    #: ``None`` when the constraint declares no function.
+    function: OsimFunction | None
+    #: ``None`` when the file does not declare one.
+    scale_factor: float | None
 
 
 @dataclass(frozen=True)
 class OsimJoint:
-    """One joint of the model: its two bodies, its coordinates, and whether it translates."""
+    """One joint of the model: its two bodies, its coordinates, and whether it translates.
+
+    The kinematic fields describe the joint without evaluating it. ``parent_frame`` and
+    ``child_frame`` are ``None`` when the socket is absent or names something that does not
+    resolve to a frame fixed in a body (a chain of offset frames, a frame this reader cannot
+    find); ``parent_socket`` and ``child_socket`` keep the paths as written for that case.
+    """
 
     name: str
     parent_body: str | None
     child_body: str | None
     coordinates: tuple[str, ...]
     translates: bool
+    #: The joint's XML tag: ``CustomJoint``, ``PinJoint``, ``WeldJoint`` ...
+    kind: str = ""
+    parent_frame: OsimFrame | None = None
+    child_frame: OsimFrame | None = None
+    #: The spatial transform's axes in file order; empty for joints that have none.
+    transform_axes: tuple[OsimTransformAxis, ...] = ()
+    #: One entry per name in ``coordinates``, in the same order.
+    coordinate_details: tuple[OsimCoordinate, ...] = ()
+    parent_socket: str | None = None
+    child_socket: str | None = None
 
     def fixed_in(self) -> frozenset[str]:
         """Bodies in which this joint's centre is a fixed point.
@@ -73,6 +190,8 @@ class OsimModel:
     #: The model's own gravity vector, which is what says which way is up. ``None`` when the
     #: model does not declare one -- callers must refuse rather than assume a convention.
     gravity: tuple[float, float, float] | None = None
+    #: Every ``CoordinateCouplerConstraint`` in the constraint set, in file order.
+    couplers: tuple[OsimCouplerConstraint, ...] = ()
 
     @property
     def coordinate_names(self) -> tuple[str, ...]:
@@ -184,24 +303,205 @@ def _joint_coordinates(joint: ET.Element) -> tuple[str, ...]:
     return tuple(c.get("name") for c in listing if c.get("name"))
 
 
+# --- the kinematic description, as written -------------------------------------------------------
+
+
+def _numbers(text: str, what: str) -> tuple[float, ...]:
+    try:
+        return tuple(float(v) for v in text.split())
+    except ValueError as exc:
+        raise FormatError(f"{what}: {text.strip()!r} is not a list of numbers") from exc
+
+
+def _sequence(element: ET.Element, tag: str, what: str) -> tuple[float, ...] | None:
+    """The numbers of a child element; ``None`` when the element is absent or empty."""
+    text = element.findtext(tag)
+    if text is None or not text.strip():
+        return None
+    return _numbers(text, f"{what} {tag}")
+
+
+def _number(element: ET.Element, tag: str, what: str) -> float | None:
+    values = _sequence(element, tag, what)
+    if values is None:
+        return None
+    if len(values) != 1:
+        raise FormatError(f"{what} {tag}: expected one number, found {len(values)}")
+    return values[0]
+
+
+def _vector(element: ET.Element, tag: str, what: str) -> Vector3 | None:
+    values = _sequence(element, tag, what)
+    if values is None:
+        return None
+    if len(values) != 3:
+        raise FormatError(f"{what} {tag}: expected three numbers, found {len(values)}")
+    return values  # type: ignore[return-value]
+
+
+def _function(element: ET.Element | None, what: str) -> OsimFunction | None:
+    """A function element as data; a ``<function>`` wrapper is looked through."""
+    if element is None:
+        return None
+    if element.tag == "function":
+        return _function(next(iter(element), None), what)
+    kind = element.tag
+    where = f"{what} {kind}"
+    values: dict[str, object] = {}
+
+    def keep(key: str, value: object) -> None:
+        if value is not None:
+            values[key] = value
+
+    if kind == "Constant":
+        keep("value", _number(element, "value", where))
+    elif kind in ("LinearFunction", "PolynomialFunction"):
+        keep("coefficients", _sequence(element, "coefficients", where))
+    elif kind in _KNOT_FUNCTIONS or kind == "GCVSpline":
+        keep("x", _sequence(element, "x", where))
+        keep("y", _sequence(element, "y", where))
+        if kind == "GCVSpline":
+            half_order = _number(element, "half_order", where)
+            if half_order is not None and not half_order.is_integer():
+                raise FormatError(f"{where} half_order: {half_order} is not an integer")
+            keep("half_order", None if half_order is None else int(half_order))
+            keep("error_variance", _number(element, "error_variance", where))
+    elif kind == "MultiplierFunction":
+        keep("scale", _number(element, "scale", where))
+        inner = element.find("function")
+        if inner is None:
+            inner = next((child for child in element if child.tag != "scale"), None)
+        keep("function", _function(inner, where))
+    return OsimFunction(kind=kind, values=values)
+
+
+def _socket_path(reference: str) -> tuple[str, ...]:
+    """A socket's component names, with slashes and ``.``/``..`` steps dropped."""
+    return tuple(part for part in reference.strip().split("/") if part not in ("", ".", ".."))
+
+
+def _declared_offset_frames(root: ET.Element) -> dict[tuple[str, ...], ET.Element]:
+    """Every named offset frame a body, a joint or ground owns, by its component path."""
+    owners: list[tuple[tuple[str, ...], ET.Element]] = []
+    for set_tag, prefix in (("BodySet", "bodyset"), ("JointSet", "jointset")):
+        objects = root.find(f".//{set_tag}/objects")
+        for owner in objects if objects is not None else []:
+            if owner.get("name"):
+                owners.append(((prefix, owner.get("name")), owner))
+    ground = root.find(".//Ground")
+    if ground is not None:
+        owners.append(((_GROUND,), ground))
+    frames: dict[tuple[str, ...], ET.Element] = {}
+    for path, owner in owners:
+        for element in owner.iter("PhysicalOffsetFrame"):
+            if element.get("name"):
+                frames[(*path, element.get("name"))] = element
+    return frames
+
+
+def _body_frame(
+    path: tuple[str, ...], frames: dict[tuple[str, ...], ET.Element]
+) -> OsimFrame | None:
+    """The frame a path names, when it is a body or an offset frame fixed directly in one."""
+    if path == (_GROUND,):
+        return OsimFrame(_GROUND, _ZERO, _ZERO)
+    if len(path) == 2 and path[0] == "bodyset":
+        return OsimFrame(path[1], _ZERO, _ZERO)
+    element = frames.get(path)
+    if element is None:
+        return None
+    parent = _socket_path(element.findtext("socket_parent") or "")
+    if parent == (_GROUND,):
+        body = _GROUND
+    elif len(parent) == 2 and parent[0] == "bodyset":
+        body = parent[1]
+    else:
+        # Hangs off another offset frame (or off nothing): not a frame fixed in a body as
+        # written, and composing the chain would be evaluating it.
+        return None
+    where = f"offset frame {'/'.join(path)!r}"
+    return OsimFrame(
+        body=body,
+        translation=_vector(element, "translation", where) or _ZERO,
+        orientation=_vector(element, "orientation", where) or _ZERO,
+        name=element.get("name"),
+    )
+
+
+def _joint_frame(
+    socket: str | None, joint: str, frames: dict[tuple[str, ...], ET.Element]
+) -> OsimFrame | None:
+    if socket is None or not socket.strip():
+        return None
+    path = _socket_path(socket)
+    if len(path) == 1 and path != (_GROUND,):
+        # A bare name is a frame the joint itself declares.
+        path = ("jointset", joint, path[0])
+    return _body_frame(path, frames)
+
+
+def _transform_axes(joint: ET.Element, where: str) -> tuple[OsimTransformAxis, ...]:
+    spatial = joint.find(".//SpatialTransform")
+    axes: list[OsimTransformAxis] = []
+    for element in spatial if spatial is not None else []:
+        if element.tag != "TransformAxis":
+            continue
+        name = element.get("name") or ""
+        what = f"{where} TransformAxis {name!r}"
+        axes.append(
+            OsimTransformAxis(
+                name=name,
+                coordinates=tuple((element.findtext("coordinates") or "").split()),
+                axis=_vector(element, "axis", what),
+                function=_function(_axis_function(element), what),
+            )
+        )
+    return tuple(axes)
+
+
+def _coordinate_details(joint: ET.Element, where: str) -> tuple[OsimCoordinate, ...]:
+    listing = joint.find("./coordinates")
+    details: list[OsimCoordinate] = []
+    for element in listing if listing is not None else []:
+        name = element.get("name")
+        if not name:
+            continue
+        motion_type = (element.findtext("motion_type") or "").strip().lower()
+        details.append(
+            OsimCoordinate(
+                name=name,
+                default_value=_number(element, "default_value", f"{where} coordinate {name!r}"),
+                locked=(element.findtext("locked") or "").strip().lower() == "true",
+                motion_type=motion_type or None,
+            )
+        )
+    return tuple(details)
+
+
 def _joints(root: ET.Element) -> tuple[OsimJoint, ...]:
     joints: list[OsimJoint] = []
+    frames = _declared_offset_frames(root)
     joint_objects = root.find(".//JointSet/objects")
     for element in joint_objects if joint_objects is not None else []:
         local_frames = _local_offset_frames(element)
-        parent = element.find("socket_parent_frame")
-        child = element.find("socket_child_frame")
+        name = element.get("name") or ""
+        where = f"joint {name!r}"
+        parent_socket = element.findtext("socket_parent_frame")
+        child_socket = element.findtext("socket_child_frame")
         joints.append(
             OsimJoint(
-                name=element.get("name") or "",
-                parent_body=_body_from_socket(
-                    parent.text if parent is not None else None, local_frames
-                ),
-                child_body=_body_from_socket(
-                    child.text if child is not None else None, local_frames
-                ),
+                name=name,
+                parent_body=_body_from_socket(parent_socket, local_frames),
+                child_body=_body_from_socket(child_socket, local_frames),
                 coordinates=_joint_coordinates(element),
                 translates=_joint_translates(element),
+                kind=element.tag,
+                parent_frame=_joint_frame(parent_socket, name, frames),
+                child_frame=_joint_frame(child_socket, name, frames),
+                transform_axes=_transform_axes(element, where),
+                coordinate_details=_coordinate_details(element, where),
+                parent_socket=parent_socket.strip() if parent_socket else None,
+                child_socket=child_socket.strip() if child_socket else None,
             )
         )
     return tuple(joints)
@@ -222,6 +522,29 @@ def _dependent_coordinates(root: ET.Element) -> tuple[str, ...]:
         if name is not None and (name.text or "").strip():
             dependent.append(name.text.strip())
     return tuple(dependent)
+
+
+def _couplers(root: ET.Element) -> tuple[OsimCouplerConstraint, ...]:
+    couplers: list[OsimCouplerConstraint] = []
+    constraint_objects = root.find(".//ConstraintSet/objects")
+    for element in constraint_objects if constraint_objects is not None else []:
+        if element.tag != "CoordinateCouplerConstraint":
+            continue
+        name = element.get("name") or ""
+        where = f"constraint {name!r}"
+        function = element.find("coupled_coordinates_function")
+        couplers.append(
+            OsimCouplerConstraint(
+                name=name,
+                independent=tuple((element.findtext("independent_coordinate_names") or "").split()),
+                dependent=(element.findtext("dependent_coordinate_name") or "").strip(),
+                function=_function(
+                    next(iter(function), None) if function is not None else None, where
+                ),
+                scale_factor=_number(element, "scale_factor", where),
+            )
+        )
+    return tuple(couplers)
 
 
 def _markers(root: ET.Element) -> tuple[OsimMarker, ...]:
@@ -278,6 +601,7 @@ def parse(xml_text: str) -> OsimModel:
         dependent_coordinates=_dependent_coordinates(root),
         markers=_markers(root),
         gravity=_gravity(root),
+        couplers=_couplers(root),
     )
 
 

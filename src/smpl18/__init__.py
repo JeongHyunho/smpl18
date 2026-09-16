@@ -1,26 +1,25 @@
-"""smpl18 -- convert motion capture into an SMPL-24 pose corpus.
+"""smpl18 -- convert motion capture into an 18-joint reduced SMPL pose corpus.
 
-One rule shapes the package: code implements source kinds and file formats; a dataset is a
-profile (YAML) that binds them. No module knows a dataset by name.
+Labelled markers, OpenSim kinematics, joint-centre trajectories, BVH skeletons and SMPL-family
+parameters all end in the same corpus: per-subject betas, per-trial poses of the 18 kept joints,
+and the four frozen-joint constants that rebuild the 24-joint pose. One rule shapes the package:
+code implements source kinds and file formats; a dataset is described by data (a profile, a
+marker set, a correspondence table), never by a module.
 
-The public surface planned for 0.1 (see docs/plan.md sections 3 and 4):
+    smpl18.formats    file readers that return tables in the file's own names (npz, pickle,
+                      json, osim, mot, trc, c3d, b3d, bvh, mat)
+    smpl18.sources    the four source kinds, the skeleton models (OpenSim, BVH), marker sets,
+                      subject files
+    smpl18.fit        targets, correspondence tables, the shape fit, the per-frame pose solve
+    smpl18.reduce     the 18-joint reduction: four joints fitted to per-subject constants
+    smpl18.convert    one reader per source kind, the subject fit, the corpus writer
+    smpl18.corpus     the on-disk corpus: write, read, rebuild 24 joints
+    smpl18.model      extracted SMPL models (and a stand-in body for trying the pipeline)
+    smpl18.skeleton   the 24-joint definition, rotations, forward kinematics, frame changes
+    smpl18.profile    dataset profiles: schema, loading, layout discovery, field binding
+    smpl18.synthetic  synthetic motion and captures of it, for the examples and tests
 
-    smpl18.model     load and select the extracted SMPL body models, expose their hashes
-    smpl18.skeleton  the 24-joint definition, rotations, forward kinematics, frame changes
-    smpl18.formats   file readers that return tables in the file's own names (npz, pickle, json,
-                     osim, mot, trc, c3d, b3d, bvh, mat)
-    smpl18.sources   the four source kinds: smpl_parameters, skeleton_motion (with generic
-                     skeleton models: OpenSim-style and BVH-style FK), joint_centres,
-                     marker_trajectories
-    smpl18.profile   profile schema, loading, field binding, file-layout discovery
-    smpl18.fit       shape from bone lengths, joint correspondence, pose by rotation transfer or IK
-    smpl18.reduce    the 18-joint reduction: four joints fitted to per-subject constants
-    smpl18.repair    unwrap-before-filter, resampling, discontinuity scan
-    smpl18.corpus    the on-disk corpus (write, read, summary)
-    smpl18.validate  forward-kinematics reproduction, bone-length residuals, round trips
-    smpl18.convert   one pipeline per source kind, driven by a bound profile
-
-This seed release carries only the version; the modules arrive with the migration phases.
+The command line is ``smpl18`` (``smpl18.cli``).
 """
 
 __version__ = "0.0.0"

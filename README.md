@@ -1,37 +1,37 @@
 # smpl18
 
-Convert motion capture into an **18-joint reduced-model pose corpus**: one body shape per
-subject, one axis-angle pose sequence per trial on the SMPL skeleton reduced to 18 joints, with
-a record of where every joint's motion came from.
+Turn whatever motion capture you have — **labelled markers only**, **joint kinematics only**,
+joint centres, an animation skeleton, or SMPL parameters — into one representation: an
+**18-joint reduced SMPL pose corpus**. You get one body shape per subject, one axis-angle pose
+sequence per trial, and a record of where every joint's motion came from and how well the
+result reproduces the source.
 
-The conversion passes through the full 24-joint SMPL pose and then freezes four joints
+The conversion fits the full 24-joint SMPL skeleton first. It then freezes four joints
 (`spine1`, `spine2`, both collars) to per-subject constants and drops the two hand joints. The
-constants are not guessed: they are fitted to minimise the joint-centre error the freeze causes,
-and the corpus records that error. Segment world orientations survive the reduction exactly. See
-[`docs/primer.md`](docs/primer.md) section 5.
-
-The package is organised by **what a source observes** and **how it is stored**, never by which
-dataset it is. A dataset is a *profile*: a YAML file that binds a source kind and a file format
-to that dataset's layout, field names, units, joint correspondence, repairs and settings.
-
-| Source kind | Observes | Formats in the first release |
-|---|---|---|
-| `smpl_parameters` | SMPL / SMPL-H / SMPL-X `poses`, `betas`, `trans` | `npz`, `pickle`, `json` |
-| `skeleton_motion` | an articulated skeleton and its joint angles per frame | `osim`+`mot` (+`trc`), `b3d`, `bvh`; `fbx` through a Blender bridge |
-| `joint_centres` | anatomical joint-centre trajectories | `mat`, `trc`, `c3d` |
-| `marker_trajectories` | labelled surface markers | `trc`, `c3d`, with a marker-set description |
-
-Example profiles ship for public datasets (AddBiomechanics, GAITEX, AMASS). A dataset that
-cannot be published keeps its profile outside this repository, found through
-`SHARED_DATASET_PATH`. Adding a dataset means writing a profile, not a module.
-
-**Status: in progress.** Model handling, the skeleton, the format readers and the profile layer
-are implemented; the fitting, repair and corpus layers are next, so the `convert` commands below
-are still the specification rather than working code. [`docs/plan.md`](docs/plan.md) has the
-roadmap.
+constants are **fitted** to minimise the joint-centre error the freeze causes, and that error is
+recorded. The world orientation of every stored segment survives the reduction exactly
+([`docs/primer.md`](docs/primer.md) §5).
 
 The repository contains no body-model files and no motion data; see
 [Body models and licences](#body-models-and-licences).
+
+---
+
+## Which command fits your data
+
+| You have | Command | You also need |
+|---|---|---|
+| Labelled surface markers (`.trc`, `.c3d`) | `smpl18 convert markers` | a marker set describing your labels, and the subject's measurements |
+| OpenSim kinematics (`.osim` + `.mot`/`.sto` from IK) | `smpl18 convert opensim` | a correspondence naming your model's joints (Rajagopal/gait2392 ships) |
+| An animation skeleton (`.bvh`; `.fbx` through Blender) | `smpl18 convert bvh` | a correspondence naming your rig's joints (a humanoid one ships), the file's length unit and up axis |
+| Joint-centre trajectories (`.trc`, `.c3d`, `.npz`) | `smpl18 convert centres` | a correspondence naming your centre labels (a common set ships) |
+| SMPL / SMPL-H parameters (`.npz`) | `smpl18 convert smpl` | nothing else; nothing is fitted (SMPL-X: see [below](#smpl-parameters)) |
+
+Every command takes the same subject, settings, model and output options. One invocation
+converts one subject, and its trials are fitted together: give all of a subject's trials at
+once. Several invocations can write different subjects into the same corpus; a subject that is
+already there is refused unless `--replace` is given. [`examples/`](examples/README.md) has a
+runnable script for each row.
 
 ---
 
@@ -48,188 +48,379 @@ python -m pip install -e ".[dev]"
 smpl18 --version
 ```
 
-`.c3d` reading uses `ezc3d`, installed as a regular dependency.
-
-### 2. Prepare the body models (once per machine)
+### 2. Get a body model
 
 SMPL is licensed by the Max Planck Institute and is **not redistributed here**. Download the
-`.pkl` models from the SMPL website under your own licence, then extract the few arrays this
-package needs into a licence-free `.npz` per gender:
+`.pkl` models from the SMPL website under your own licence, then extract the arrays this package
+needs into a licence-free `.npz` per gender. No pickle code runs while reading them.
 
 ```bash
-smpl18 extract-model --pkl path/to/basicmodel_m_lbs_10_207_0_v1.1.0.pkl --gender male   --out ~/smpl18-models
-smpl18 extract-model --pkl path/to/basicmodel_f_lbs_10_207_0_v1.1.0.pkl --gender female --out ~/smpl18-models
-smpl18 extract-model --pkl path/to/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --gender neutral --out ~/smpl18-models
+smpl18 extract-model --pkl path/to/basicmodel_m_lbs_10_207_0_v1.1.0.pkl --gender male --num-betas 10 --out path/to/smpl18-models
+smpl18 extract-model --pkl path/to/basicmodel_f_lbs_10_207_0_v1.1.0.pkl --gender female --num-betas 10 --out path/to/smpl18-models
+smpl18 extract-model --pkl path/to/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl --gender neutral --num-betas 10 --out path/to/smpl18-models
 ```
 
-The extractor never executes pickle code: it uses a whitelisting unpickler and writes only
-`v_template`, `shapedirs`, `J_regressor`, `kintree_parents` (and `weights`, `posedirs`, `faces`
-when a mesh is wanted). Point the tools at the directory with `--models` or `SMPL18_MODELS`.
+Point the converters at that directory with `--models`, or set `SMPL18_MODELS` once. There is no
+default location.
 
-### 3. Convert a dataset through its profile
+**Just trying it out?** `smpl18 demo-models --out demo-models` writes a *stand-in body*. It has
+the SMPL-24 tree and ordinary adult proportions, so every command runs without the licensed
+files. It is not a human shape model, and a corpus made with it says so.
+
+### 3. Try the examples
 
 ```bash
-# Look at what a profile binds, and check it against the schema
-smpl18 profile show     configs/profiles/addbiomechanics.yaml
-smpl18 profile validate configs/profiles/gaitex.yaml
-
-# Convert: the profile says which kind and format the dataset is, how its files are laid out,
-# which field means what, and which correspondence, repairs and settings apply
-smpl18 convert --profile configs/profiles/addbiomechanics.yaml --input /data/addbiomechanics \
-    --models ~/smpl18-models --out corpus/addbiomechanics
-
-smpl18 convert --profile configs/profiles/gaitex.yaml --input /data/gaitex \
-    --models ~/smpl18-models --out corpus/gaitex
-
-smpl18 convert --profile configs/profiles/amass.yaml --input /data/amass \
-    --models ~/smpl18-models --out corpus/amass
-
-# A dataset whose profile is not in this repository: point SHARED_DATASET_PATH at the drive that
-# holds it, then name the profile.
-export SHARED_DATASET_PATH=/mnt/shared/datasets      # or set it in the environment once
-smpl18 convert --profile <name> --input /data/<dataset> --models ~/smpl18-models --out corpus/<name>
+python examples/01_markers_to_smpl18.py     # markers only
+python examples/02_opensim_to_smpl18.py     # OpenSim kinematics only
+python examples/03_bvh_to_smpl18.py         # BVH
+python examples/04_joint_centres_to_smpl18.py
+python examples/05_smpl_parameters_to_smpl18.py
+python examples/06_read_the_corpus.py example-output/01_markers/corpus
 ```
 
-A profile name resolves in this order: an existing path as given; `configs/profiles/<name>.yaml`
-in this package; `$SHARED_DATASET_PATH/smpl18/profiles/<name>.yaml`. Values inside a profile may
-use `${SHARED_DATASET_PATH}`, and relative paths resolve against the profile's own directory, so a
-profile published on the shared drive finds its correspondence and settings files beside it.
-
-Every converter writes the same corpus layout (see [Corpus format](#corpus-format)).
-
-### 4. Convert a single file without a profile
-
-For ad hoc use, name the kind and format on the command line; the same generic code runs.
-
-```bash
-# SMPL-H parameters in an npz: trim to the body joints, fix the up axis, resample, reduce
-smpl18 convert --kind smpl_parameters --format npz --up-axis z --fps 100 \
-    --input motion.npz --models ~/smpl18-models --out corpus/adhoc
-
-# An OpenSim skeleton with an inverse-kinematics result
-smpl18 convert --kind skeleton_motion --format osim_mot --osim model.osim --mot ik.mot \
-    --correspondence configs/correspondence/opensim_rajagopal.yaml --gender female \
-    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
-
-# Labelled markers: joint centres by a marker-set description, then position IK
-smpl18 convert --kind marker_trajectories --format trc --input trial.trc --static static.trc \
-    --markerset configs/markersets/plug_in_gait.yaml --gender male \
-    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
-
-# An animation skeleton with a joint map
-smpl18 convert --kind skeleton_motion --format bvh --input clip.bvh \
-    --correspondence configs/correspondence/bvh_mixamo.yaml \
-    --settings configs/settings/default.yaml --models ~/smpl18-models --out corpus/adhoc
-
-# FBX goes through Blender (external, not bundled): FBX -> BVH -> convert
-smpl18 fbx2bvh --input clip.fbx --blender "C:/Program Files/Blender/blender.exe" --out clip.bvh
-```
-
-**What FBX is, and why it goes through Blender.** FBX is Autodesk's binary interchange format
-for 3D scenes and skeletal animation, common in game and animation pipelines. Reading it needs
-the proprietary Autodesk SDK or a reimplementation; Blender (free) imports FBX and exports BVH,
-which this package reads natively. `smpl18 fbx2bvh` drives a Blender you already have installed.
-
-Numeric limits (filter cut-offs, joint-rate limits, IK weights, gap lengths) are never defaulted
-inside the library. A profile points at a settings file; ad hoc runs pass `--settings`. The
-values used are copied into every trial manifest.
-
-### 5. Inspect and validate
-
-```bash
-smpl18 info corpus/gaitex                    # subjects, trials, frames, provenance summary
-smpl18 validate corpus/gaitex                # forward-kinematics reproduction, bone-length residuals
-smpl18 validate corpus/adhoc --against trial.trc   # compare FK joints with the source observations
-```
-
-### 6. Use from Python
-
-```python
-from smpl18 import Model, Skeleton
-from smpl18.profile import Profile
-from smpl18.convert import convert_subject
-from smpl18.corpus import read_corpus
-
-profile = Profile.load("configs/profiles/gaitex.yaml")          # validated; referenced files hashed
-model_root = "~/smpl18-models"
-
-for subject in profile.layout.subjects("/data/gaitex"):           # discovery from the profile's layout
-    convert_subject(profile, subject, models=model_root, out="corpus/gaitex")
-
-corpus = read_corpus("corpus/gaitex")
-trial = corpus.subject("S03").trial("walk_01")
-skel = Skeleton(Model.for_gender(trial.gender, root=model_root), trial.betas)
-joints_world = skel.fk(trial.poses_24(), trial.trans)             # [T, 24, 3], the freeze undone
-```
-
-The generic layers are usable on their own:
-
-```python
-from smpl18.formats import osim, mot
-from smpl18.sources.skeleton import OpenSimSkeleton
-from smpl18.fit import fit_shape, Correspondence, transfer_segment_rotations
-
-skeleton = OpenSimSkeleton(osim.read("model.osim"))
-motion = skeleton.motion(mot.read("ik.mot"))                       # segment rotations per frame
-corr = Correspondence.from_yaml("configs/correspondence/opensim_rajagopal.yaml")
-shape = fit_shape(model, motion.bone_lengths(corr), settings=fit_settings)
-pose = transfer_segment_rotations(model, shape, motion, corr, settings=pose_settings)
-```
+Each example writes synthetic input files and prints the exact `smpl18` command it runs. It then
+reports how far the stored poses are from the motion the files were made from.
 
 ---
 
-## Profiles
+## Converting your data
 
-A profile is the only place a dataset is named. In outline:
+The options below are shared by every `convert` command.
+
+| Option | Meaning |
+|---|---|
+| `--out DIR` | the corpus directory; created or added to |
+| `--settings FILE` | the engine settings; [`configs/settings/default.yaml`](configs/settings/default.yaml) is a documented starting point. Repeat the option to layer a file of your own over it |
+| `--models DIR` | the extracted model directory (or `SMPL18_MODELS`) |
+| `--subject FILE` | a subject file: id, gender, measurements (see below) |
+| `--subject-id ID --gender G` | instead of, or overriding, the file; `G` is `male`, `female` or `neutral` and selects the body model |
+| `--measurement NAME=METRES` | a subject measurement, repeatable, overriding the file |
+| `--quiet` | print only the summary |
+| `--replace` | convert a subject that is already in the corpus anew; its earlier trials are removed, because they were fitted with the old shape and constants |
+
+A **subject file** is a small YAML file:
 
 ```yaml
-schema: smpl18_profile_v1
-id: addbiomechanics
-source_kind: skeleton_motion
-format: b3d
-layout: {subject: "{study}/{subject}.b3d", trial: within_container}
-bindings:
-  gender: {field: biological_sex, map: {female: female, f: female, male: male, unknown: neutral}}
-  frames: {pass: dynamics, fallback: kinematics}
-  root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]
-conventions: {up_axis: y, length_unit: m, angle_unit: rad}
-correspondence: ../correspondence/opensim_rajagopal.yaml
-shape: {method: bone_lengths, landmark_offsets: ../offsets/addbiomechanics_v1.yaml}
-repairs:
-  wrap: {coordinates: [pelvis_rotation, arm_rot_r, arm_flex_r], filter: {order: 2, cutoff_hz: 30}}
-  resample: {fps: 100}
-skip: {trials_without: dynamics}
-settings: ../settings/default.yaml
+schema: smpl18_subject_v1
+id: S01
+gender: female
+measurements:            # metres; only marker sets read them
+  marker_radius: 0.007
+  leg_length_left: 0.86
+  leg_length_right: 0.86
+  knee_width_left: 0.10
+  knee_width_right: 0.10
+  ankle_width_left: 0.07
+  ankle_width_right: 0.07
+  elbow_width_left: 0.065
+  elbow_width_right: 0.065
+  shoulder_offset_left: 0.035
+  shoulder_offset_right: 0.035
 ```
 
-The schema is documented field by field in [`docs/profile-schema.md`](docs/profile-schema.md).
-The loader refuses unknown keys, resolves relative paths against the profile, and hashes every
-referenced file into the corpus manifests.
+### Markers only
 
-Public datasets' profiles ship here as examples. Internal datasets' profiles are authored in the
-consuming project and published to the shared drive under `smpl18/`, mirroring this package's
-`configs/` layout (`profiles/`, `correspondence/`, `markersets/`, `offsets/`, `settings/`); the
-`SHARED_DATASET_PATH` environment variable names that drive.
+```bash
+smpl18 convert markers \
+    --input S01/walk01.c3d S01/walk02.c3d \
+    --markerset configs/markersets/conventional_full_body.yaml \
+    --up-axis z \
+    --subject S01.yaml \
+    --settings configs/settings/default.yaml \
+    --models path/to/smpl18-models --out corpus
+```
+
+- **Marker set.** It says how each joint centre follows from your labels.
+  [`conventional_full_body.yaml`](configs/markersets/conventional_full_body.yaml) covers the
+  Plug-in Gait-style full-body labels (`LASI … RFIN`):
+  - hip centres by the Davis regression;
+  - knees and ankles by the chord through the thigh and shank wands;
+  - elbows on the flexion axis through the epicondyle marker;
+  - wrists between the wrist-bar markers.
+
+  It also builds segment frames (pelvis, thorax, head, thighs, shanks, feet, arms, hands), which
+  steer each segment's twist. An elbow straighter than 10° has no well-defined flexion axis, so
+  that frame goes without an elbow centre (a static trial with straight arms has none). The
+  upper-arm marker must sit directly laterally on the arm, not towards its back, and further
+  out than the line from the shoulder centre to the elbow marker, or the elbow rule cannot
+  tell the joint centre from its mirror image; a trial where the elbow centre does not hold
+  still on the upper arm is flagged. For another protocol, copy the file and edit the labels and rules
+  ([Writing your own tables](#writing-your-own-tables)).
+- **Measurements.** The marker set declares which ones it needs. A missing one is an error that
+  names it.
+- **Up axis.** Give the files' vertical axis; `.trc` and `.c3d` do not state it. Length units are
+  read from the file (`mm`, `cm`, `m`).
+- **Gaps.** Short interior gaps are bridged linearly (`markers.max_gap_frames` in the settings).
+  A frame with too few joint centres left is marked invalid and holds its nearest solved pose.
+  `--occlusion-sentinel zero` treats exact `(0, 0, 0)` samples as lost markers, for writers that
+  park them at the origin.
+
+### Kinematics only (OpenSim)
+
+```bash
+smpl18 convert opensim \
+    --osim S01/scaled_model.osim \
+    --mot S01/walk01_ik.mot S01/walk02_ik.mot \
+    --correspondence configs/correspondence/opensim_rajagopal.yaml \
+    --subject-id S01 --gender female \
+    --settings configs/settings/default.yaml \
+    --models path/to/smpl18-models --out corpus
+```
+
+- **Forward kinematics.** The model's own FK places every body and joint centre from the
+  coordinates:
+  - OpenSim 4 custom, pin, slider, universal, gimbal, ball, free, planar and weld joints;
+  - spline and linear coordinate functions;
+  - coupled coordinates.
+
+  An OpenSim 3 model must be opened and saved once in OpenSim 4. The coordinate file must hold
+  every independent coordinate; coupled ones follow their couplers.
+- **Up axis.** It comes from the model's gravity. Degrees or radians come from the file's
+  `inDegrees` header; `--angle-unit` covers a file that does not say.
+- **Correspondence.** The table names which model joint gives each SMPL joint its centre and
+  which body gives it its rotation. The shipped
+  [`opensim_rajagopal.yaml`](configs/correspondence/opensim_rajagopal.yaml) fits the Rajagopal
+  and gait2392/gait2354 families (the latter through an alias for their knee names). A joint
+  your model lacks is reported and left unobserved.
+
+### Animation skeleton (BVH, FBX)
+
+```bash
+smpl18 convert bvh \
+    --input clip01.bvh clip02.bvh \
+    --correspondence configs/correspondence/bvh_humanoid.yaml \
+    --up-axis y --length-unit cm \
+    --subject-id actor01 --gender male \
+    --settings configs/settings/default.yaml \
+    --models path/to/smpl18-models --out corpus
+```
+
+**The file's frame and units.** BVH files do not state their length unit or up axis, so both are
+required.
+
+**Joint names.** [`bvh_humanoid.yaml`](configs/correspondence/bvh_humanoid.yaml) matches the
+common humanoid names (`Hips`, `Spine`, `LeftUpLeg`, `LeftArm`, …) and strips namespace prefixes
+such as `mixamorig:`. Add `aliases` for a rig that spells a joint differently.
+
+**What FBX is, and why it goes through Blender.** FBX is Autodesk's binary format for 3D scenes
+and skeletal animation. Reading it needs the proprietary SDK, but Blender (free) imports FBX and
+exports BVH:
+
+```bash
+smpl18 fbx2bvh --input clip.fbx --out clip.bvh --blender path/to/blender
+smpl18 convert bvh --input clip.bvh --up-axis z --length-unit <unit> ...
+```
+
+Blender writes its own Z-up frame. The offsets keep the scale the FBX was imported at, so read
+one `OFFSET` line (a thigh is about 0.4 m) before choosing `--length-unit`. A wrong choice is
+reported, as below.
+
+### Joint centres
+
+```bash
+smpl18 convert centres \
+    --input S01/walk01_centres.trc \
+    --correspondence configs/correspondence/joint_centre_labels.yaml \
+    --up-axis z --subject-id S01 --gender male \
+    --settings configs/settings/default.yaml \
+    --models path/to/smpl18-models --out corpus
+```
+
+- **Input files.** A `.trc` or `.c3d` whose "markers" are joint centres works as it is.
+- **The `.npz` form.** An `.npz` holds `names` [K], `positions` [T, K, 3], `fps` and `units`. It
+  may also hold segment rotations (`segment_names` [M], `segment_rotations` [T, M, 3, 3]), which
+  a table entry names with `segment:`.
+- **Placement differences.** Lower the weight of centres your software places differently from
+  SMPL (trunk, neck, head); the shipped table does.
+
+### SMPL parameters
+
+```bash
+smpl18 convert smpl --input seq01_poses.npz seq02_poses.npz --up-axis z \
+    --subject-id 50002 --gender male \
+    --settings configs/settings/default.yaml --models path/to/smpl18-models --out corpus
+```
+
+- **What is kept.** The 22 body joints are kept and the hands are dropped. `betas` are taken as
+  stored, cut to the model's width. A frame with a non-finite pose or translation is marked
+  invalid and holds its nearest valid frame.
+- **Frame and rate.** The up axis is changed and the frame rate is read from
+  `mocap_framerate`/`fps` (or `--fps`).
+- **Array names.** `--poses-key`, `--trans-key` and `--betas-key` rename the arrays.
+- **SMPL-X is refused.** Its betas and rest pelvis belong to another template, so they cannot
+  be carried onto SMPL. Compute an SMPL-X sequence's joint positions with the SMPL-X model and
+  convert them with `smpl18 convert centres`.
+
+### Settings
+
+Every number the engine uses is in the settings file, with a comment saying what it does;
+nothing numeric is defaulted in code. The sections the converters read:
+
+| Section | What it sets |
+|---|---|
+| `output` | the corpus's up axis |
+| `shape` | how many betas, their prior, the refinement rounds and sample |
+| `pose` | the per-frame solve: iterations and tolerance; the weights of positions, orientations and the pose prior (including the heavier prior on the four joints the corpus freezes and on the knees' and elbows' off-axis turn); optional smoothing; frames per batch; the least number of joint centres a frame needs |
+| `markers` | how long a marker gap may be bridged |
+| `checks` | the plausibility warnings: a bone-length range, a ceiling on the stored pose's distance from the source, and how upright the trunk should mostly be |
+| `reduce` | the 18-joint reduction's fit |
+
+The values used are copied into every trial's manifest.
+
+**Plausibility warnings.** A wrong length unit or up axis converts without an error but gives a
+body no one has: bones metres long, or a trunk lying on its back. After writing, each command
+prints a `warning:` when measured bones fall outside a human range, when the stored pose is far
+from the source's joint centres, or when the trunk is seldom upright. The warnings are also
+recorded (`checks` in the subject record and each manifest) and shown by `smpl18 info`. A trial
+genuinely spent lying down trips the last check too.
 
 ---
 
-## Corpus format
+## What you get
 
 ```
 corpus/
-  SUMMARY.json                 counts, converter version, profile id + hash, settings hash
-  <subject>/
-    subject.json               gender, model file + sha256, betas, optional per-bone scale, fit
-                               residuals, and the reduced model: the four frozen constants, what
-                               absorbed them, and what the freeze cost
-    <trial>.npz                poses [T,18,3] axis-angle, joint_names [18], trans [T,3], fps,
-                               up_axis, joint_provenance [18], frame_valid [T]
-    <trial>.manifest.json      source files + sha256, converter version and commit, profile id + hash,
-                               correspondence id, repairs applied, discontinuity flags, settings used
+  SUMMARY.json               counts, converter version, source kinds, provenance counts
+  S01/
+    subject.json             gender, model file + sha256, betas, shape-fit residuals, the four
+                             frozen constants and what the freeze cost
+    walk01.npz               poses [T,18,3], joint_names [18], trans [T,3], fps, up_axis,
+                             joint_provenance [18], frame_valid [T]
+    walk01.manifest.json     source files + sha256, tables used, repairs, settings, validation
 ```
 
-Full definition: [`docs/corpus-format.md`](docs/corpus-format.md). Conventions of the skeleton
-itself (joint table, rest pose, frames, forward kinematics): [`docs/primer.md`](docs/primer.md).
+`joint_provenance` says, per stored joint:
+- `measured`: the source observed it;
+- `derived`: its turn was shared out to it;
+- `absent`: nothing observed it, so it is held at rest.
+
+Each manifest's `validation` gives the joint-centre error against the source's own targets,
+before and after the reduction. The full definition is in
+[`docs/corpus-format.md`](docs/corpus-format.md).
+
+```bash
+smpl18 info corpus           # per subject and trial: frames, residuals, the freeze's cost
+```
+
+Reading it in Python:
+
+```python
+from smpl18.corpus import read_corpus
+from smpl18.model import Model
+
+corpus = read_corpus("corpus")
+subject = corpus.subject("S01")
+trial = subject.trial("walk01")
+trial.poses                    # (T, 18, 3) axis-angle, in trial.joint_names order
+local = trial.local_rotations_24()          # (T, 24, 3, 3): frozen joints at their constants
+model = Model.for_gender(subject.gender, root="path/to/smpl18-models")
+joints = trial.joints_world(model)          # (T, 24, 3) world joint centres
+```
+
+The same pipeline is available without the command line (`smpl18.convert`):
+
+```python
+from smpl18 import convert
+from smpl18.model import Model
+from smpl18.sources.markers import MarkerSet
+from smpl18.sources.subject import SubjectInfo
+
+settings, settings_files = convert.load_settings(["configs/settings/default.yaml"])
+subject = SubjectInfo.load("S01.yaml")
+model = Model.for_gender(subject.gender, root="path/to/smpl18-models")
+markerset = MarkerSet.load("configs/markersets/conventional_full_body.yaml")
+trials = [convert.marker_trial(path, markerset=markerset, subject=subject, up_axis="z",
+                               settings=settings)
+          for path in ["S01/walk01.c3d", "S01/walk02.c3d"]]
+fit = convert.fit_subject(model, trials, settings)
+convert.write_subject_corpus("corpus", subject=subject, model=model, trials=trials, fit=fit,
+                             settings=settings, settings_files=settings_files)
+```
+
+---
+
+## How it works
+
+1. **Targets.** Every source is brought to the same form in the corpus frame:
+   - **positions** of SMPL joint centres;
+   - optionally **orientations** of the segments SMPL joints move.
+
+   A marker set derives both from markers. A skeleton's forward kinematics gives both.
+   Joint-centre files give positions, and orientations if they store segment rotations.
+2. **Shape.**
+   - Betas are fitted to the bone lengths the targets show (median over frames).
+   - They are then refined against every target, alternating with pose solves on a sample of
+     frames, so that the trunk and other chains count too.
+   - All of a subject's trials are pooled.
+3. **Pose.** Every frame is solved by Levenberg–Marquardt with an analytic Jacobian:
+   - joint centres to their targets;
+   - segment orientations to theirs, after a per-segment constant that a first positions-only
+     pass calibrates;
+   - a pose prior that holds unobserved twist at rest. The prior is heavier on the joints the
+     corpus will freeze, and on the knees' and elbows' rotation off their hinge axis.
+
+   The constants between source and SMPL segment frames are calibrated once per subject, on
+   all its trials, so a segment seen only through its own frame (a head, a hand) keeps one
+   neutral twist across them. That assumes the markers stay where they were put: convert
+   sessions with re-applied markers as separate subjects.
+4. **Reduction.**
+   - The four frozen joints get the per-subject constants that least displace the joints below
+     them, fitted on the subject's pooled poses.
+   - `spine3` and the shoulders absorb what was removed.
+   - The hands are dropped.
+
+[`docs/primer.md`](docs/primer.md) explains the skeleton and each step;
+[`docs/plan.md`](docs/plan.md) explains the design.
+
+---
+
+## Writing your own tables
+
+Tables are data, validated when loaded (unknown keys are refused).
+
+- **Marker set** (`smpl18_markerset_v1`, [`configs/markersets/`](configs/markersets/)). It
+  declares:
+  - `measurements` the subject must supply;
+  - `lengths` measured from markers;
+  - `frames` built from two directions each;
+  - `centres`, each by one rule:
+    - `point`: a marker or a mean of markers;
+    - `offset`: in a frame, each coordinate a linear combination of lengths and measurements;
+    - `chord`: the wand construction;
+    - `hinge`: on a flexion axis through a lateral marker;
+  - `segments`, which frame orients which SMPL joint.
+
+  A point may be a label, a list of labels (their mean), or `{centre: <joint>}`. A `hinge`
+  also names `min_flexion_deg`, below which the frame goes without that centre, and
+  `drift_tolerance`, how far the centre may move on the proximal segment.
+- **Correspondence** (`smpl18_correspondence_v1`,
+  [`configs/correspondence/`](configs/correspondence/)).
+  - `names: opensim_joints` / `bvh_joints`: an entry lists source joints. The first gives the
+    position, the body the last one moves gives the orientation; `position: false` or
+    `orientation: false` drops either.
+  - `names: centres`: an entry names a `centre` and optionally a `segment`.
+  - For every table: `fill: weld | distribute` for joints without a source, `weight` per entry,
+    `prefixes` to strip and `aliases` (`{name in the file: name in the table}`) for naming
+    variants, and a `lumbar` block for a single trunk body spanning SMPL's three spine joints.
+
+---
+
+## Dataset profiles
+
+Whole public datasets are described by **profiles**, YAML files that bind a source kind and a
+file format to a dataset's layout, field names, units and repairs. The code never names a
+dataset. Example profiles ship for AddBiomechanics, GAITEX and AMASS in
+[`configs/profiles/`](configs/profiles/). A profile that cannot be published is found through
+the `SHARED_DATASET_PATH` environment variable.
+
+```bash
+smpl18 profile validate configs/profiles/gaitex.yaml   # schema check, referenced files hashed
+smpl18 profile show amass                              # the resolved profile
+```
+
+Converting a whole dataset directly from its profile (`smpl18 convert --profile …`) is on the
+roadmap ([`docs/plan.md`](docs/plan.md) §5). Today, convert a dataset's subjects with the
+commands above. The schema is in [`docs/profile-schema.md`](docs/profile-schema.md).
 
 ---
 
@@ -238,18 +429,18 @@ itself (joint table, rest pose, frames, forward kinematics): [`docs/primer.md`](
 - SMPL body models are licensed by MPI and must be obtained by each user. This repository never
   contains them, and the extracted `.npz` files must not be committed or shared.
 - Motion data is never stored in this repository either. Converters read from paths you give
-  them and write only to `--out`.
-- The code is under the MIT licence (`LICENSE`). The repository is private while the work is in
-  progress; the licence governs distribution once its owner publishes it.
+  them and write only to `--out`. The examples and tests make their own synthetic inputs.
+- The code is under the MIT licence (`LICENSE`). SMPL and every dataset keep their own licences.
 
 ## Development
 
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest -q
-ruff check src tests
+ruff check src tests examples
 ```
 
-Tests are pure-Python fixtures; nothing needs the body models or motion data. Integration checks
-that do need them are skipped unless `SMPL18_MODELS` points at an extracted model set. A test
-greps `src/` for profile ids so that no dataset name can creep back into code.
+The tests use synthetic fixtures and the stand-in body; nothing needs the licensed models or
+motion data. They also run every example on a few frames, so the examples stay in step with the
+code. A test searches `src/` for the shipped dataset ids, so that no dataset name can creep into
+code.

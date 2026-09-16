@@ -1,10 +1,9 @@
 # AddBiomechanics as a profile: an OpenSim skeleton with joint angles per frame, stored in .b3d
 # containers, one subject per file, trials inside.
 #
-# This profile reproduces the reference AddBiomechanics conversion of 2026-09-15: a bone-length
-# shape fit with no landmark offsets, an unrecorded sex read as the neutral body, and the 53
-# trials that carry no dynamics pass left out. Every value below says what it means for this
-# dataset.
+# Its choices: a bone-length shape fit with no landmark offsets, an unrecorded sex read as the
+# neutral body, and trials that carry no dynamics pass left out (53 in the public release).
+# Every value below says what it means for this dataset.
 schema: smpl18_profile_v1
 id: addbiomechanics
 description: AddBiomechanics .b3d subjects (OpenSim Rajagopal-family skeletons, marker-driven IK)
@@ -22,7 +21,7 @@ layout:
 bindings:
   gender:
     field: biological_sex           # the container's own subject-header field
-    # The field is read as stored, by its first initial: m -> male, f -> female. The cohort
+    # The field is read as stored, by its first initial: m -> male, f -> female. The release
     # writes female, male, f and unknown.
     map: {female: female, f: female, male: male, m: male, unknown: neutral}
     # unknown selects the neutral body because the container itself says unknown: a subject whose
@@ -48,8 +47,8 @@ correspondence: ../correspondence/opensim_rajagopal.yaml   # picked by the topol
 
 shape:
   method: bone_lengths              # betas fitted to the segment lengths measured on the skeleton
-  # The reference conversion applied no landmark offsets and this profile keeps that.
-  # ../offsets/addbiomechanics_landmarks_v1.yaml holds the table a profile can opt into.
+  # No landmark offsets are applied; ../offsets/addbiomechanics_landmarks_v1.yaml holds the
+  # table a profile can opt into.
   landmark_offsets: none
   rescale_to_measured: false
   # Shape is fitted once per subject on frames concatenated from the first
@@ -79,7 +78,7 @@ provenance:
 repairs:
   wrap:
     # Not keyed on a coordinate name: every column whose unfiltered pass carries a 2*pi
-    # staircase is rebuilt, the rest are left bit-identical. Over the cohort the repair rebuilt
+    # staircase is rebuilt, the rest are left bit-identical. Over the public release the repair rebuilt
     # pelvis_rotation 2,012 times, arm_rot_r 93 and arm_flex_r 37.
     coordinates: any
     # Filter constants are read from each trial's own lowPassFilter pass header rather than
@@ -94,7 +93,7 @@ repairs:
   discontinuity: {settings_key: discontinuity, action: flag}   # scanned and flagged on the index entry, never dropped
 
 skip:
-  trials_without_pass: dynamics     # 53 trials in the cohort carry no dynamics pass
+  trials_without_pass: dynamics     # 53 in the public release carry none
   empty_trials: true                # a trial of zero length
   subjects_with_unresolved_gender: false   # the default above resolves every value, so nothing is skipped here
 

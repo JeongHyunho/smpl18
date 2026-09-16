@@ -1,6 +1,5 @@
 # Numbers the GAITEX conversion sets for itself, layered over default.yaml by the profile's
-# settings list, plus the joint ranges declared for this dataset. They are the values the
-# reference conversion of 2026-09-15 ran with.
+# settings list, plus the joint ranges declared for this dataset.
 schema: smpl18_settings_v1
 id: gaitex
 
@@ -15,10 +14,8 @@ frames:
   min_solved_span: 100
 
 joint_ranges:
-  # The declared ranges for this dataset (gaitex_joint_ranges_v1 1.0.0, 2026-09-05), in degrees,
-  # on OpenSim coordinate names. Frames outside a range are counted and recorded; none is dropped.
-  source_config_id: gaitex_joint_ranges_v1
-  source_version: "1.0.0"
+  # The ranges declared for this dataset, in degrees, on OpenSim coordinate names. Frames
+  # outside a range are counted and recorded; none is dropped.
   limits_deg:                     # bounds on a single frame's coordinate value
     knee_angle_r: {min: -15.0, max: 155.0}
     knee_angle_l: {min: -15.0, max: 155.0}

@@ -20,16 +20,16 @@ from .select import (
 
 __all__ = [
     "ENV_MODELS",
-    "Extracted",
     "GENDERS",
     "GENDER_FEMALE",
     "GENDER_MALE",
     "GENDER_NEUTRAL",
     "MESH_KEYS",
     "MODEL_FILENAMES",
+    "REQUIRED_KEYS",
+    "Extracted",
     "Model",
     "ModelRootUnset",
-    "REQUIRED_KEYS",
     "UnresolvedGender",
     "extract_clean",
     "file_sha256",

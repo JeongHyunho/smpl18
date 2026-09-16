@@ -173,8 +173,22 @@ class SkeletonModel(ABC):
 
     @property
     @abstractmethod
+    def joint_child_bodies(self) -> Mapping[str, str]:
+        """The body each joint moves, keyed by joint name: the segment distal to the joint.
+
+        A correspondence that names a source joint takes its position target from the joint's
+        centre and its orientation target from this body.
+        """
+
+    @property
+    @abstractmethod
     def coordinate_names(self) -> tuple[str, ...]:
         """Independent coordinates, in the order ``SkeletonMotion.coordinates`` uses."""
+
+    @property
+    @abstractmethod
+    def rotational_coordinates(self) -> tuple[str, ...]:
+        """The coordinates that are angles; every other coordinate is a length."""
 
     @abstractmethod
     def rest_transform(self, body: str) -> tuple[np.ndarray, np.ndarray]:

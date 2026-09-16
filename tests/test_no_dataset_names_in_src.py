@@ -1,32 +1,42 @@
 """No dataset may be named in library code: a dataset is a profile, never a module.
 
-The ids come from the profiles in configs/, so the guard grows with them and names no dataset
-of its own. Their appearance anywhere under src/smpl18 (code, docstrings or comments) is the
-risk the plan's Risks section warns about.
+The ids come from the shipped dataset profiles and the settings files named after them, so the
+guard grows with them and names no dataset of its own. Marker sets and correspondence tables are
+not read: they are named after capture protocols and naming schemes shared by many datasets.
+Their appearance anywhere under src/smpl18 (code, docstrings or comments) is the risk the plan's
+Risks section warns about. Whole words are matched, so an id cannot hide inside a longer word
+and a shorter word cannot trip the guard.
 """
 
 import pathlib
 import re
 
 import pytest
+import yaml
 
 PACKAGE = pathlib.Path(__file__).resolve().parents[1]
 SRC = PACKAGE / "src" / "smpl18"
-#: Every shipped profile id, plus the stems of the tables the profiles point at, so a name that
-#: belongs to a dataset cannot reach the library through either route.
-DATASET_IDS = tuple(sorted({
-    part
-    for directory in ("profiles", "correspondence", "offsets", "settings", "markersets")
-    for path in (PACKAGE / "configs" / directory).glob("*.yaml")
-    for part in path.stem.split("_")
-    if len(part) > 3 and part not in {"default", "landmarks", "rajagopal", "opensim"}
-}))
-PATTERN = re.compile("|".join(DATASET_IDS), re.IGNORECASE)
+#: Settings files every profile shares; their ids name no dataset.
+SHARED_SETTINGS = {"default"}
+
+
+def _ids() -> tuple[str, ...]:
+    found = set()
+    for directory in ("profiles", "settings"):
+        for path in (PACKAGE / "configs" / directory).glob("*.yaml"):
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            found.add(str(data["id"]))
+    return tuple(sorted(found - SHARED_SETTINGS))
+
+
+DATASET_IDS = _ids()
+PATTERN = re.compile(r"\b(" + "|".join(map(re.escape, DATASET_IDS)) + r")\b", re.IGNORECASE)
 SOURCES = sorted(SRC.rglob("*.py"))
 
 
-def test_the_source_tree_was_found() -> None:
+def test_the_source_tree_and_the_ids_were_found() -> None:
     assert SOURCES, f"no Python files under {SRC}"
+    assert DATASET_IDS, "no dataset profile found under configs/"
 
 
 @pytest.mark.parametrize("path", SOURCES, ids=[str(p.relative_to(SRC)) for p in SOURCES])

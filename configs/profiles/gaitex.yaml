@@ -2,7 +2,7 @@
 # (.mot) solved from nine inertial units, marker trajectories (.trc) beside them, and a metadata
 # JSON naming the driven bodies.
 #
-# This profile reproduces the reference GAITEX conversion of 2026-09-15: shape pooled per subject,
+# Its choices: shape pooled per subject,
 # the frozen pelvis translation recovered from markers, and provenance limited to the bodies each
 # trial's metadata declares driven. Every value below says what it means for this dataset.
 schema: smpl18_profile_v1

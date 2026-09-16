@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from smpl18.formats import pickle_safe
+
 from .load import MESH_KEYS, REQUIRED_KEYS, Model
 from .select import GENDERS, model_filename
 

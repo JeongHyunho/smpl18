@@ -1,4 +1,5 @@
-# OpenSim (Rajagopal-family) joint names -> SMPL-24 joints, as data.
+# OpenSim joint names -> SMPL-24 joints, as data: the Rajagopal family, and gait2392/gait2354
+# through the aliases at the end (those models name their knees knee_l/knee_r and have no arms).
 #
 # The table is intersected with the skeleton a file actually declares: a joint the model lacks
 # makes its SMPL joint `absent` by the same rule that leaves the neck absent in every variant.
@@ -12,7 +13,9 @@ id: opensim_rajagopal
 names: opensim_joints
 
 joints:
-  pelvis:         {source: [ground_pelvis]}
+  # The pelvis body's origin is not where SMPL puts its pelvis joint (between and above the
+  # hips), so only its rotation is used; the hips and the lumbar centre place the root.
+  pelvis:         {source: [ground_pelvis], position: false}
   left_hip:       {source: [hip_l]}
   right_hip:      {source: [hip_r]}
   spine1:         {fill: distribute}          # from the lumbar block below
@@ -53,6 +56,7 @@ trunk_body: torso
 # and are never reported among a joint's rotation coordinates.
 root_translation: [pelvis_tx, pelvis_ty, pelvis_tz]
 
-# Source-name aliases (alias -> name the file uses). None needed: the names above are the
-# model's own.
-aliases: {}
+# Source-name aliases, {name in the model file: name used in this table}.
+aliases:
+  knee_l: walker_knee_l
+  knee_r: walker_knee_r

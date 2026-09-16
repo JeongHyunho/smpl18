@@ -308,7 +308,9 @@ and copied into the output.
 - **Discontinuity scan.** Compute the joint rotation rate between adjacent frames and flag spans
   that exceed a physically possible value; the limit is declared in settings. Spans whose cause is
   not established are marked and excluded, never repaired.
-- **Gaps.** Do not fill missing spans by interpolation; mark them.
+- **Gaps.** Do not fill missing spans of the result by interpolation; mark them. Bridging a
+  single marker's short gap before the joint-centre rules run is a different matter: done only
+  up to a length the settings declare, and recorded.
 
 ### 4.6 Verification and record
 
@@ -325,6 +327,29 @@ Record: gender and the model file's hash, `β`, whether the skeleton was rescale
 correspondence table and each joint's measured/derived/absent label, frame, up axis and units,
 where the resampling and filter settings came from, gap and discontinuity spans and the exclusion
 list, and the code revision.
+
+### 4.7 What this package does
+
+The converters (`smpl18 convert ...`) follow method II and borrow method I's information.
+
+- **Targets.** Joint centres come from a marker set, a joint-centre file or the source
+  skeleton's forward kinematics. Segment orientations, where the source has them, are compared
+  after a constant per segment. That constant is calibrated from a first, positions-only solve
+  of the whole trial rather than from a rest pose, which removes the need for both skeletons to
+  share one.
+- **Shape.** `β` comes from bone lengths first, then from alternating pose solves and a
+  closed-form `β` solve against every joint centre, so that the trunk counts too.
+- **Pose.** Every frame is solved separately from a hierarchical Kabsch start. The prior is
+  heavier in two places:
+  - on the joints the reduced model freezes (section 5);
+  - on the knees' and elbows' rotation off their hinge axis, which settles a thigh's or upper
+    arm's twist the way the body does when positions alone cannot.
+
+  Smoothing is an optional last pass towards the neighbouring frames. The orientation
+  constants are calibrated once per subject, on all its trials.
+- **Record.** The joint-centre error of the fitted and of the stored pose is recorded per trial.
+
+`docs/plan.md` §3.5 lists the modules.
 
 ---
 

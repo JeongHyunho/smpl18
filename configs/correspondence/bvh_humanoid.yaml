@@ -1,0 +1,42 @@
+# BVH joint names of the common humanoid rig (Hips, Spine, LeftUpLeg, LeftArm, ...) -> SMPL-24.
+#
+# Many animation tools and motion libraries export this naming, some with a namespace prefix on
+# every joint ("mixamorig:Hips"); the prefixes below are stripped before matching. A BVH joint's
+# position is its centre and its frame is the segment it moves, so each entry names one joint.
+# Rigs differ in where they put their spine and neck joints, so only the joints whose placement
+# agrees with SMPL's across rigs give positions; the spine gives rotations.
+schema: smpl18_correspondence_v1
+id: bvh_humanoid
+description: humanoid BVH rig names (Hips / Spine / LeftUpLeg / LeftArm ...)
+names: bvh_joints
+prefixes: ["mixamorig:", "mixamorig_"]
+
+joints:
+  pelvis:         {source: [Hips], position: false}   # rigs place Hips anywhere in the pelvis
+  left_hip:       {source: [LeftUpLeg]}
+  right_hip:      {source: [RightUpLeg]}
+  left_knee:      {source: [LeftLeg]}
+  right_knee:     {source: [RightLeg]}
+  left_ankle:     {source: [LeftFoot]}
+  right_ankle:    {source: [RightFoot]}
+  left_foot:      {source: [LeftToeBase]}
+  right_foot:     {source: [RightToeBase]}
+  spine1:         {source: [Spine], position: false}
+  spine2:         {source: [Spine1], position: false}
+  spine3:         {source: [Spine2], position: false}
+  neck:           {source: [Neck]}
+  head:           {source: [Head]}
+  left_collar:    {source: [LeftShoulder], position: false}
+  right_collar:   {source: [RightShoulder], position: false}
+  left_shoulder:  {source: [LeftArm]}
+  right_shoulder: {source: [RightArm]}
+  left_elbow:     {source: [LeftForeArm]}
+  right_elbow:    {source: [RightForeArm]}
+  left_wrist:     {source: [LeftHand]}
+  right_wrist:    {source: [RightHand]}
+  left_hand:      {fill: weld}
+  right_hand:     {fill: weld}
+
+# Rigs that spell a joint differently map it here, {name in the file: name in this table},
+# e.g. {LThigh: LeftUpLeg}.
+aliases: {}

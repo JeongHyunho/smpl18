@@ -1,0 +1,35 @@
+# Joint-centre labels as motion-analysis software commonly exports them (LHJC, LKJC, ...) ->
+# SMPL-24 joints. Use it for a .trc / .c3d / .npz whose trajectories are joint centres rather
+# than skin markers; edit the labels to match your export.
+#
+# A centre that is not where SMPL puts its joint should carry a lower weight or be left out:
+# THORAX, NECK and HEAD below stand for the lower sternum level of the trunk, the base of the
+# neck and the head's own centre, which exports place differently.
+schema: smpl18_correspondence_v1
+id: joint_centre_labels
+description: joint-centre trajectories labelled LHJC / LKJC / LAJC / LSJC ...
+names: centres
+
+joints:
+  left_hip:       {centre: LHJC}
+  right_hip:      {centre: RHJC}
+  left_knee:      {centre: LKJC}
+  right_knee:     {centre: RKJC}
+  left_ankle:     {centre: LAJC}
+  right_ankle:    {centre: RAJC}
+  left_foot:      {centre: LTOE, weight: 0.5}
+  right_foot:     {centre: RTOE, weight: 0.5}
+  spine3:         {centre: THORAX, weight: 0.5}
+  neck:           {centre: NECK, weight: 0.5}
+  head:           {centre: HEAD, weight: 0.25}
+  left_shoulder:  {centre: LSJC}
+  right_shoulder: {centre: RSJC}
+  left_elbow:     {centre: LEJC}
+  right_elbow:    {centre: REJC}
+  left_wrist:     {centre: LWJC}
+  right_wrist:    {centre: RWJC}
+  # Segment rotations, when the file carries them, are named per entry with `segment:`, e.g.
+  # left_hip: {centre: LHJC, segment: LTH}.
+
+# Other spellings map here, {label in the file: label in this table}.
+aliases: {}

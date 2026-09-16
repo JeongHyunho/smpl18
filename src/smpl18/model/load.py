@@ -14,12 +14,15 @@ from pathlib import Path
 import numpy as np
 
 from smpl18.skeleton.definition import NUM_JOINTS, PARENTS
+
 from .select import MODEL_FILENAMES, file_sha256, model_path_for_gender
 
-__all__ = ["MESH_KEYS", "Model", "REQUIRED_KEYS", "load"]
+__all__ = ["MESH_KEYS", "REQUIRED_KEYS", "STAND_IN_KEY", "Model", "load"]
 
 REQUIRED_KEYS: tuple[str, ...] = ("v_template", "shapedirs", "J_regressor", "kintree_parents")
 MESH_KEYS: tuple[str, ...] = ("weights", "posedirs", "faces")
+#: Present in a file written by ``smpl18.model.demo``: a stand-in, not an SMPL model.
+STAND_IN_KEY = "stand_in"
 
 _POSE_FEATURES = (NUM_JOINTS - 1) * 9
 
@@ -35,7 +38,8 @@ class Model:
     """An SMPL body model reduced to what the skeleton (and optionally the mesh) needs.
 
     ``gender``, ``path`` and ``sha256`` are ``None`` for a model built in memory rather than
-    loaded from a file.
+    loaded from a file. ``stand_in`` is true for the demonstration body of
+    :mod:`smpl18.model.demo`, which only borrows the SMPL-24 tree.
     """
 
     v_template: np.ndarray
@@ -48,6 +52,7 @@ class Model:
     gender: str | None = None
     path: Path | None = None
     sha256: str | None = None
+    stand_in: bool = False
 
     def __post_init__(self) -> None:
         set_ = object.__setattr__
@@ -120,6 +125,7 @@ def load(path: str | Path, *, gender: str | None = None) -> Model:
         for key in MESH_KEYS:
             if key in keys:
                 arrays[key] = data[key]
+        stand_in = STAND_IN_KEY in keys
         if "faces" not in arrays and "f" in keys:
             arrays["faces"] = data["f"]     # the SMPL pickle's own spelling of the triangle list
     return Model(
@@ -127,4 +133,5 @@ def load(path: str | Path, *, gender: str | None = None) -> Model:
         gender=gender if gender is not None else _gender_from_name(path),
         path=path,
         sha256=file_sha256(path),
+        stand_in=stand_in,
     )

@@ -4,15 +4,14 @@
 # papering over a landmark disagreement (the two conventions do not put "the hip" or "the
 # shoulder" in the same place).
 #
-# Medians over 94 subjects spanning every study and both variants of the AddBiomechanics cohort;
+# Medians over 94 subjects spanning every study and both variants of the AddBiomechanics release;
 # per side on purpose, since the released SMPL templates are themselves left-right asymmetric by
 # up to 7 mm. Held out one study at a time, the table cut pooled bone-length rms from 22.9 mm to
 # 15.3 mm and stature bias from +49 mm to +31 mm. To recompute the table, repeat that
-# leave-one-study-out calibration over the cohort, three subjects per study.
+# leave-one-study-out calibration over the release, three subjects per study.
 #
-# The shipped AddBiomechanics profile does NOT apply this table (its reference conversion ran with
-# no landmark offsets); it is here so a profile can opt in by pointing shape.landmark_offsets at
-# it.
+# The shipped AddBiomechanics profile does NOT apply this table (it fits without landmark
+# offsets); it is here so a profile can opt in by pointing shape.landmark_offsets at it.
 schema: smpl18_landmark_offsets_v1
 id: addbiomechanics_landmarks_v1
 unit: m

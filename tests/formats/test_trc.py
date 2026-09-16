@@ -154,3 +154,23 @@ def test_an_unknown_label_is_a_key_error_naming_it(tmp_path):
     table = trc.read(write_trc(tmp_path / "m.trc", positions=positions_mm()))
     with pytest.raises(KeyError, match="R_IPS"):
         table.positions_of("R_IPS")
+
+
+def test_what_write_writes_read_reads_back(tmp_path):
+    positions = positions_mm(4)
+    valid = np.ones(positions.shape[:2], dtype=bool)
+    valid[2, 1] = False
+    path = trc.write(tmp_path / "round.trc", ("A", "B", "C"), positions, rate_hz=120.0,
+                     units="mm", valid=valid)
+    table = trc.read(path)
+    assert table.labels == ("A", "B", "C")
+    assert (table.data_rate_hz, table.units, table.frame_count) == (120.0, "mm", 4)
+    np.testing.assert_array_equal(table.valid, valid)
+    np.testing.assert_allclose(table.positions[valid], positions[valid], atol=5e-7)
+    np.testing.assert_allclose(table.times_s, np.arange(4) / 120.0, atol=1e-6)
+    assert table.frame_numbers.tolist() == [1, 2, 3, 4]
+
+
+def test_write_refuses_positions_that_do_not_match_the_labels(tmp_path):
+    with pytest.raises(ValueError, match="positions"):
+        trc.write(tmp_path / "bad.trc", ("A",), positions_mm(2), rate_hz=100.0, units="mm")

@@ -55,7 +55,9 @@ class TwoBodyModel(SkeletonModel):
     bodies = ("root", "child")
     joints = ("ground_root", "hinge")
     parents = {"root": None, "child": "root"}
+    joint_child_bodies = {"ground_root": "root", "hinge": "child"}
     coordinate_names = ("root_tx", "hinge_angle")
+    rotational_coordinates = ("hinge_angle",)
 
     def rest_transform(self, body):
         return np.eye(3), (np.zeros(3) if body == "root" else np.array([1.0, 0.0, 0.0]))

@@ -3,20 +3,27 @@
 **What it observes.** World positions of named anatomical joint centres per frame,
 `[T, K, 3]` in metres with a `[T, K]` validity mask: the output of a marker-based model
 (Visual3D, Vicon Plug-in Gait) after its own processing. A source that also places its
-segments may carry each body's world rotation `[T, 3, 3]`; then pose can be transferred
-rather than solved. The dataclass is `smpl18.sources.JointCentres`.
+segments may carry each body's world rotation `[T, 3, 3]`, which then steers each segment's
+twist. The dataclass is `smpl18.sources.JointCentres`.
 
-**How it becomes SMPL-24.** Shape: bone lengths between centres, measured on the trials
-`shape.from_trials` names (a static pose, typically), then least squares for the betas; when
-ten betas cannot reach the measured proportions, `shape.rescale_to_measured` scales the rest
-skeleton's edges, chains and spans onto the measured lengths, directions untouched. Pose:
-with segment rotations present, `pose.method: segment_rotation_transfer` as for a skeleton;
-without them, `position_ik` (Kabsch initialisation, least squares with angle regularisation
-and temporal smoothing). Root: `pelvis_centre`, with the constant from anatomical
-`directions` read off a static trial when two hip offsets cannot fix it, an `anchor` pair the
-translation must hit, and `tracked` joints the translation is solved against every frame. A
-static `pose.reference` trial defines neutral: unfitted joints (a head with no child) take
-their constant from it and the trunk's turn is measured against it.
+**Command.** `smpl18 convert centres --input <trc/c3d/npz>... --correspondence <yaml>
+--up-axis <axis>` ([README](../../README.md#joint-centres),
+[example 4](../../examples/04_joint_centres_to_smpl18.py)).
+
+**How it becomes SMPL-24.**
+
+1. **Read the file.** A `.trc` / `.c3d` is read with its own labels and units. An `.npz` holds
+   `names`, `positions`, `fps` and `units`, and optionally `segment_names` with
+   `segment_rotations`. Everything is turned into the corpus frame.
+2. **Apply the correspondence** (`names: centres`). Each SMPL joint's entry names the centre that
+   is its position target, and optionally the segment whose rotation is its orientation target.
+   Entries may carry a weight (lower for centres placed differently from SMPL, such as trunk,
+   neck and head) and joints without a source may carry a `fill` rule. Labels the file lacks are
+   reported in the manifest.
+3. **Fit.** The shape, the per-frame pose and the reduction run as for every kind
+   ([`plan.md`](../plan.md) §3.5–3.6). Without segment rotations, the twist of a segment that
+   nothing below it reveals (a head, a hand) stays at rest, and the knees' and elbows' hinge
+   prior settles the thigh's and upper arm's twist.
 
 **Then the reduction.** Whatever the kind, the 24-joint pose is reduced to the 18 joints the
 corpus stores: four joints frozen to fitted per-subject constants, the two hands dropped,
@@ -24,9 +31,10 @@ orientations preserved exactly (`primer.md` section 5). A joint the source did n
 its provenance through the reduction, and a frozen joint's provenance is recorded with the
 constants rather than per trial.
 
-**Formats.** `mat` (variables and structs, addressed by key path), `trc`, `c3d`.
+**Formats.** `trc`, `c3d`, `npz`; `mat` (variables and structs, addressed by key path) through
+profiles.
 
-**Profile keys that apply.**
+**Profile keys** (profile-driven conversion of whole datasets is on the roadmap):
 
 | Key | Use |
 |---|---|

@@ -28,7 +28,8 @@ import numpy as np
 
 from ._vendor.nimblephysics import SubjectOnDisk_pb2 as _protobuf
 from .errors import FormatError
-from .osim import OsimModel, parse as _parse_osim
+from .osim import OsimModel
+from .osim import parse as _parse_osim
 
 __all__ = [
     "B3dFile",

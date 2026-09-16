@@ -1,0 +1,231 @@
+# A full-body marker set with the labels of the conventional gait model (Plug-in Gait style):
+# pelvis LASI RASI LPSI RPSI; legs LTHI LKNE LTIB LANK LHEE LTOE (and R...); head LFHD RFHD LBHD
+# RBHD; trunk C7 T10 CLAV STRN; arms LSHO LUPA LELB LWRA LWRB LFIN (and R...).
+#
+# The rules follow that model's published definitions where they exist -- the regression hip
+# centre, the knee and ankle by the chord through the thigh and shank wands -- and simple,
+# stated approximations elsewhere. They are what this package computes, not what any vendor's
+# software computes; compare the joint centres with your lab's own processing before trusting a
+# corpus made from them. A setup that uses a single sacral marker instead of LPSI/RPSI replaces
+# [LPSI, RPSI] below with SACR.
+#
+# Units: metres. Every measurement below is supplied per subject (see the README).
+schema: smpl18_markerset_v1
+id: conventional_full_body
+description: conventional gait model labels, full body
+
+measurements:
+  - marker_radius           # half the marker diameter
+  - leg_length_left         # anterior iliac spine to medial malleolus, through the knee
+  - leg_length_right
+  - knee_width_left         # between the femoral epicondyles
+  - knee_width_right
+  - ankle_width_left        # between the malleoli
+  - ankle_width_right
+  - elbow_width_left        # between the humeral epicondyles
+  - elbow_width_right
+  - shoulder_offset_left    # acromion marker to the glenohumeral centre, along the trunk axis
+  - shoulder_offset_right
+
+lengths:
+  asis_width: {between: [LASI, RASI]}   # read from the markers, median over the trial
+
+frames:
+  # Pelvis: y towards the left iliac spine, x forward from the posterior to the anterior spines,
+  # z up. Origin midway between the anterior spines.
+  pelvis:
+    origin: [LASI, RASI]
+    primary: {axis: y, from: RASI, to: LASI}
+    secondary: {axis: x, from: [LPSI, RPSI], to: [LASI, RASI]}
+  # Thorax: y up the trunk, x forward from the spine to the sternum.
+  thorax:
+    origin: CLAV
+    primary: {axis: y, from: [STRN, T10], to: [CLAV, C7]}
+    secondary: {axis: x, from: [C7, T10], to: [CLAV, STRN]}
+  head:
+    origin: [LFHD, RFHD, LBHD, RBHD]
+    primary: {axis: x, from: [LBHD, RBHD], to: [LFHD, RFHD]}
+    secondary: {axis: y, from: [RFHD, RBHD], to: [LFHD, LBHD]}
+  # Limb frames exist to give the pose solve each segment's turn; their axes only have to move
+  # with the segment, since the solve calibrates the constant between them and SMPL.
+  left_thigh:
+    primary: {axis: y, from: {centre: left_knee}, to: {centre: left_hip}}
+    secondary: {axis: x, from: {centre: left_knee}, to: LKNE}
+  right_thigh:
+    primary: {axis: y, from: {centre: right_knee}, to: {centre: right_hip}}
+    secondary: {axis: x, from: {centre: right_knee}, to: RKNE}
+  left_shank:
+    primary: {axis: y, from: {centre: left_ankle}, to: {centre: left_knee}}
+    secondary: {axis: x, from: {centre: left_ankle}, to: LANK}
+  right_shank:
+    primary: {axis: y, from: {centre: right_ankle}, to: {centre: right_knee}}
+    secondary: {axis: x, from: {centre: right_ankle}, to: RANK}
+  # Foot: z forward from heel to toe, y towards the ankle centre. Origin at the toe marker.
+  left_foot:
+    origin: LTOE
+    primary: {axis: z, from: LHEE, to: LTOE}
+    secondary: {axis: y, from: [LHEE, LTOE], to: {centre: left_ankle}}
+  right_foot:
+    origin: RTOE
+    primary: {axis: z, from: RHEE, to: RTOE}
+    secondary: {axis: y, from: [RHEE, RTOE], to: {centre: right_ankle}}
+  left_upper_arm:
+    primary: {axis: y, from: {centre: left_elbow}, to: {centre: left_shoulder}}
+    secondary: {axis: x, from: {centre: left_elbow}, to: LELB}
+  right_upper_arm:
+    primary: {axis: y, from: {centre: right_elbow}, to: {centre: right_shoulder}}
+    secondary: {axis: x, from: {centre: right_elbow}, to: RELB}
+  # Forearm: the wrist bar gives the pronation the elbow centre cannot.
+  left_forearm:
+    primary: {axis: y, from: {centre: left_wrist}, to: {centre: left_elbow}}
+    secondary: {axis: x, from: LWRB, to: LWRA}
+  right_forearm:
+    primary: {axis: y, from: {centre: right_wrist}, to: {centre: right_elbow}}
+    secondary: {axis: x, from: RWRB, to: RWRA}
+  # Hand: the finger marker gives its direction. The wrist bar sits on the forearm, so the hand
+  # frame borrows the forearm's twist; the wrist itself hardly twists, which makes this close.
+  left_hand:
+    primary: {axis: y, from: LFIN, to: {centre: left_wrist}}
+    secondary: {axis: x, from: LWRB, to: LWRA}
+  right_hand:
+    primary: {axis: y, from: RFIN, to: {centre: right_wrist}}
+    secondary: {axis: x, from: RWRB, to: RWRA}
+
+centres:
+  # Hip centres by the Davis regression the conventional gait model uses, in the pelvis frame:
+  #   C = 0.115 Lm - 0.0153 with Lm the mean of both leg lengths,
+  #   A = 0.1288 L - 0.04856 with L this side's leg length (iliac spine to trochanter),
+  #   x = C cos(t) sin(b) - (A + r) cos(b),  y = +/-(width/2 - C sin(t)),
+  #   z = -C cos(t) cos(b) - (A + r) sin(b),  with t = 0.5 rad, b = 0.314 rad, r marker radius.
+  # Expanded below into coefficients of both leg lengths, r and the measured spine width.
+  left_hip:
+    offset:
+      frame: pelvis
+      x: {leg_length_left: -0.1069168, leg_length_right: 0.0155857, marker_radius: -0.9511057,
+          constant: 0.0420386}
+      y: {leg_length_left: -0.0275670, leg_length_right: -0.0275670, asis_width: 0.5,
+          constant: 0.0073352}
+      z: {leg_length_left: -0.0877756, leg_length_right: -0.0479937, marker_radius: -0.3088655,
+          constant: 0.0277690}
+  right_hip:
+    offset:
+      frame: pelvis
+      x: {leg_length_right: -0.1069168, leg_length_left: 0.0155857, marker_radius: -0.9511057,
+          constant: 0.0420386}
+      y: {leg_length_right: 0.0275670, leg_length_left: 0.0275670, asis_width: -0.5,
+          constant: -0.0073352}
+      z: {leg_length_right: -0.0877756, leg_length_left: -0.0479937, marker_radius: -0.3088655,
+          constant: 0.0277690}
+  # Knee and ankle by the chord: in the plane of the proximal centre, the lateral marker and the
+  # wand, square to the proximal centre, half the joint width plus the marker radius from the
+  # lateral marker, on the side away from the wand.
+  left_knee:
+    chord:
+      proximal: {centre: left_hip}
+      lateral: LKNE
+      plane: LTHI
+      side: away_from_plane
+      distance: {knee_width_left: 0.5, marker_radius: 1.0}
+  right_knee:
+    chord:
+      proximal: {centre: right_hip}
+      lateral: RKNE
+      plane: RTHI
+      side: away_from_plane
+      distance: {knee_width_right: 0.5, marker_radius: 1.0}
+  left_ankle:
+    chord:
+      proximal: {centre: left_knee}
+      lateral: LANK
+      plane: LTIB
+      side: away_from_plane
+      distance: {ankle_width_left: 0.5, marker_radius: 1.0}
+  right_ankle:
+    chord:
+      proximal: {centre: right_knee}
+      lateral: RANK
+      plane: RTIB
+      side: away_from_plane
+      distance: {ankle_width_right: 0.5, marker_radius: 1.0}
+  # The SMPL foot joint sits at the ball of the foot; the toe marker is one marker radius above
+  # the skin over it. Half weight: the skin below the marker is not modelled.
+  left_foot:
+    offset: {frame: left_foot, origin: LTOE, y: {marker_radius: -1.0}}
+    weight: 0.5
+  right_foot:
+    offset: {frame: right_foot, origin: RTOE, y: {marker_radius: -1.0}}
+    weight: 0.5
+  # Trunk and head: approximations. SMPL's spine3 sits about the level of the lower sternum and
+  # its neck at the base of the neck; the head joint lies below the head markers, so the head
+  # centre only steers the neck's direction and carries a quarter weight.
+  spine3:
+    point: [T10, STRN]
+    weight: 0.5
+  neck:
+    point: [C7, CLAV]
+    weight: 0.5
+  head:
+    point: [LFHD, RFHD, LBHD, RBHD]
+    weight: 0.25
+  # Shoulder centre: the shoulder offset plus the marker radius below the acromion marker, down
+  # the trunk axis.
+  left_shoulder:
+    offset:
+      frame: thorax
+      origin: LSHO
+      y: {shoulder_offset_left: -1.0, marker_radius: -1.0}
+  right_shoulder:
+    offset:
+      frame: thorax
+      origin: RSHO
+      y: {shoulder_offset_right: -1.0, marker_radius: -1.0}
+  # Elbow centre on the flexion axis through the lateral epicondyle marker: the axis is normal to
+  # the plane of shoulder, elbow and wrist centres, pointing towards the upper-arm marker, which
+  # sits on the lateral side. The upper-arm marker must sit directly laterally on the arm (not
+  # towards its back) and further out than the line from the shoulder centre to the elbow marker
+  # at its level, or the rule cannot tell the elbow centre from its mirror image. The pick is then
+  # checked on the upper arm: the centre must hold still there within 2 cm (soft tissue moves the
+  # upper-arm marker by some millimetres); frames beyond that get no centre, and a trial whose
+  # centre wanders is flagged. Below 10 degrees of flexion the plane is too poorly defined for a
+  # centre a marker radius away to be trusted, and the frame goes without an elbow centre too
+  # (so do static trials with straight arms).
+  left_elbow:
+    hinge:
+      proximal: {centre: left_shoulder}
+      distal: {centre: left_wrist}
+      lateral: LELB
+      lateral_reference: LUPA
+      distance: {elbow_width_left: 0.5, marker_radius: 1.0}
+      min_flexion_deg: 10
+      drift_tolerance: 0.02
+  right_elbow:
+    hinge:
+      proximal: {centre: right_shoulder}
+      distal: {centre: right_wrist}
+      lateral: RELB
+      lateral_reference: RUPA
+      distance: {elbow_width_right: 0.5, marker_radius: 1.0}
+      min_flexion_deg: 10
+      drift_tolerance: 0.02
+  left_wrist:
+    point: [LWRA, LWRB]
+  right_wrist:
+    point: [RWRA, RWRB]
+
+# Orientation targets: which SMPL joint's segment each frame follows.
+segments:
+  pelvis: {frame: pelvis}
+  spine3: {frame: thorax}
+  head: {frame: head}
+  left_hip: {frame: left_thigh}
+  right_hip: {frame: right_thigh}
+  left_knee: {frame: left_shank}
+  right_knee: {frame: right_shank}
+  left_ankle: {frame: left_foot}
+  right_ankle: {frame: right_foot}
+  left_shoulder: {frame: left_upper_arm}
+  right_shoulder: {frame: right_upper_arm}
+  left_elbow: {frame: left_forearm}
+  right_elbow: {frame: right_forearm}
+  left_wrist: {frame: left_hand}
+  right_wrist: {frame: right_hand}

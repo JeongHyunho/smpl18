@@ -37,15 +37,20 @@ def arguments(description: str) -> argparse.Namespace:
     return parser.parse_args()
 
 
-def prepare(args: argparse.Namespace, name: str) -> tuple[Path, Path, Model]:
-    """``(inputs directory, models directory, neutral model)`` for one example."""
+def prepare(args: argparse.Namespace, name: str, *,
+            with_mesh: bool = False) -> tuple[Path, Path, Model]:
+    """``(inputs directory, models directory, neutral model)`` for one example.
+
+    ``with_mesh`` gives the stand-in body a surface, which only a render needs; a real model
+    directory must then have been extracted with ``--with-mesh`` too.
+    """
     work = args.work / name
     inputs = work / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     models = args.models
     if models is None:
         models = work / "models"
-        write_models(models)
+        write_models(models, with_mesh=with_mesh)
         print(f"using the stand-in body in {models} (pass --models for real SMPL models)")
     return inputs, models, Model.for_gender("neutral", root=models)
 

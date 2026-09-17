@@ -1,0 +1,55 @@
+schema: smpl18_render_v1
+id: default
+
+# Every number a Blender scene needs, in one place, because none of them is defaulted in code.
+# Override a section by passing a second file after this one: `--render-settings default.yaml
+# --render-settings mine.yaml` merges section by section.
+
+scene:
+  # How far a bone with nothing below it runs past its joint, as a fraction of the bone arriving
+  # at it. Only the drawing of the rig: the motion rides on the joint transforms, so a bone's rest
+  # pose cancels out of Blender's skinning.
+  leaf_reach: 0.7
+  # Frames whose vertices are computed here and checked inside Blender. Three is enough to catch a
+  # wrong convention (the first, middle and last frame differ in every joint); the check costs one
+  # mesh evaluation each.
+  check_frames: 3
+  # How far Blender's skinning may sit from this package's, in metres. Blender keeps vertices in
+  # float32, so a body a couple of metres from the origin lands within a few microns; 0.2 mm is
+  # loose enough never to fire by accident and tight enough that a wrong bone convention, which
+  # misplaces a limb by centimetres, always does.
+  check_tolerance_m: 0.0002
+  # A ground plane under the body, at the lowest vertex of the first frame.
+  floor: true
+  # Shade the surface smooth. A stand-in body of blocks looks better flat; a real SMPL mesh smooth.
+  smooth_shading: false
+
+render:
+  # `cycles` renders on the CPU and so works on a machine with no display, which is what
+  # `blender --background` usually is. `eevee` is far faster but needs a GPU and a display server.
+  engine: cycles
+  samples: 24
+  resolution: [960, 540]
+  # Keep every frame; 2 renders every other one.
+  frame_step: 1
+  film_transparent: false
+
+camera:
+  # The camera sits this far from the body, this high, and this far round from the front, looking
+  # at the pelvis of the first frame.
+  distance_m: 3.6
+  height_m: 1.2
+  azimuth_deg: 35
+  lens_mm: 50
+
+light:
+  # A sun this strong, tilted this far from vertical, plus a flat world light so the shadowed side
+  # is not black.
+  sun_energy: 3.0
+  sun_angle_deg: 35
+  world_light: 0.15
+
+material:
+  # A matte, skin-neutral grey. Linear RGB, as Blender takes it.
+  colour: [0.62, 0.56, 0.50]
+  roughness: 0.55

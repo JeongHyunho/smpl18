@@ -61,6 +61,25 @@ versioning starts at 0.1.0, when a corpus can be produced end to end.
 - `smpl18.formats.trc.write`.
 - `examples/`: one runnable script per kind of input on synthetic captures, run by the tests;
   `smpl18.synthetic` generates those captures.
+- Two ways back out of a corpus, for everything that reads the original 24-joint SMPL structure
+  (`docs/blender.md`):
+  - `smpl18 export-smpl` writes a trial as ordinary SMPL parameters (`poses [T, 72]`, `betas`,
+    `trans`, `mocap_framerate`, `gender`), with the frozen joints at the subject's constants, the
+    hands at identity, and `joint_provenance` widened to 24 joints (`constant`, `absent`).
+    Converting the result again returns the same rotations.
+  - `smpl18 blender` builds a Blender scene: the shaped surface skinned to 24 keyframed bones, a
+    camera, a sun and a floor, saved as a `.blend` and rendered. `--frames` takes a slice,
+    `--correctives` carries SMPL's 207 pose blend shapes in as shape keys.
+- `smpl18.mesh`: pose blend shapes and linear blend skinning in numpy, and the per-joint
+  rest-to-posed transforms a renderer's bones must carry.
+- `smpl18.blender`: the scene plan (`smpl18_blender_plan_v1`), the render settings
+  (`smpl18_render_v1`, `configs/render/default.yaml`) and the launcher; `smpl18.blender.scene` is
+  the script Blender runs, which imports `bpy` and nothing from this package. The plan carries
+  transforms rather than rotations, so Blender's own bone rest matrices cancel out of its skinning
+  and no convention has to be agreed; the scene then checks its own deformation against vertices
+  computed here and refuses to save when it differs.
+- `smpl18 demo-models --with-mesh` and `smpl18.model.demo.demo_boxes`: the stand-in body can carry
+  a blocky surface, so a scene can be built and rendered without a licensed model.
 
 ### Changed
 - The README is organised by the data a user has, with the commands that work today; converting

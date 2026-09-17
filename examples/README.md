@@ -13,6 +13,7 @@ show how close the stored 18-joint poses are to the motion the files were made f
 | [`04_joint_centres_to_smpl18.py`](04_joint_centres_to_smpl18.py) | joint-centre trajectories (`.trc` / `.c3d` / `.npz`) | `smpl18 convert centres` |
 | [`05_smpl_parameters_to_smpl18.py`](05_smpl_parameters_to_smpl18.py) | SMPL / SMPL-H / SMPL-X parameters (`.npz`) | `smpl18 convert smpl` |
 | [`06_read_the_corpus.py`](06_read_the_corpus.py) | a corpus from one of the above | reading it in Python |
+| [`07_render_in_blender.py`](07_render_in_blender.py) | a corpus, and somewhere to look at it | `smpl18 export-smpl`, `smpl18 blender` |
 
 ## Running them
 
@@ -31,6 +32,12 @@ Options every conversion example takes:
 | `--work DIR` | where inputs and corpora go (default `./example-output`, one sub-directory per example) |
 | `--models DIR` | your extracted SMPL models (see the main README); without it a **stand-in body** is written and used |
 | `--frames N` | frames per synthetic trial (default 300) |
+
+Example 7 takes two more: `--blender EXE` to build the scene with an installed Blender (without it
+the plan is written and the command printed), and `--correctives` to carry SMPL's pose blend shapes
+in as shape keys. Its `--models` directory must have been extracted with
+`smpl18 extract-model --with-mesh`, since a render needs the skinning weights; the stand-in body it
+falls back to is written with a surface of its own.
 
 The stand-in body (`smpl18 demo-models`) has the SMPL-24 tree and ordinary adult proportions so
 that everything runs without the licensed models. It is not a human shape model; a corpus made

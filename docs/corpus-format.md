@@ -54,7 +54,9 @@ A reader that needs all 24 joints rebuilds them: the four frozen joints at `cons
 stored rotations as they are (`spine3` and the shoulders already carry what the freeze took from
 the joints above them), the hands at identity (`CorpusTrial.local_rotations_24`). Segment world
 orientations are then those of the fitted 24-joint pose exactly; joint positions are within
-`reduced_model.fit.residual_rms_m` of it.
+`reduced_model.fit.residual_rms_m` of it. `smpl18 export-smpl` writes exactly that pose out as
+ordinary SMPL parameters, and `smpl18 blender` builds a scene from it
+([`blender.md`](blender.md)).
 
 ## `<subject>/<trial>.npz`
 

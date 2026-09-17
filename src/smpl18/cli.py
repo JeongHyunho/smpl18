@@ -10,11 +10,14 @@ Commands::
     extract-model     licensed SMPL .pkl -> clean .npz the converters read
     demo-models       write the stand-in body model, for trying the pipeline
     info              what a corpus holds and how well each trial was reproduced
+    export-smpl       a corpus trial back as ordinary SMPL parameters (24 joints)
+    blender           build a Blender scene from a corpus trial, and render it
     fbx2bvh           FBX -> BVH through an installed Blender
     profile           validate or show a dataset profile
 
 Every ``convert`` writes one subject: its trials, fitted together, into ``--out``. Numbers come
-from ``--settings``; nothing numeric is defaulted here.
+from ``--settings``; nothing numeric is defaulted here, and neither is any number a render needs
+(``--render-settings``).
 """
 
 from __future__ import annotations
@@ -131,10 +134,47 @@ def build_parser() -> argparse.ArgumentParser:
     demo = commands.add_parser("demo-models",
                                help="write the stand-in body (not SMPL) to try the pipeline")
     demo.add_argument("--out", required=True, type=Path)
+    demo.add_argument("--with-mesh", action="store_true",
+                      help="also give it a blocky surface, so a scene can be rendered without SMPL")
 
     info = commands.add_parser("info", help="summarise a corpus")
     info.add_argument("corpus", type=Path)
     info.add_argument("--json", action="store_true", help="print the summary as JSON")
+
+    export = commands.add_parser(
+        "export-smpl", help="a corpus trial back as ordinary SMPL parameters (24 joints)"
+    )
+    export.add_argument("--corpus", required=True, type=Path)
+    export.add_argument("--subject", help="subject id in the corpus (default: every subject)")
+    export.add_argument("--trial", action="append",
+                        help="trial id (repeatable; default: every trial of the subject)")
+    export.add_argument("--out", required=True, type=Path,
+                        help="directory for <subject>_<trial>.npz, or a .npz for a single trial")
+    export.add_argument("--poses", choices=("flat", "grouped"), default="flat",
+                        help="write poses as (T, 72), which most readers expect, or (T, 24, 3)")
+
+    scene = commands.add_parser(
+        "blender", help="build a Blender scene from a corpus trial, and render it"
+    )
+    scene.add_argument("--corpus", required=True, type=Path)
+    scene.add_argument("--subject", required=True, help="subject id in the corpus")
+    scene.add_argument("--trial", help="trial id (default: the subject's first)")
+    scene.add_argument("--out", required=True, type=Path,
+                       help="directory for the plan, the .blend and the frames")
+    scene.add_argument("--models", type=Path,
+                       help="directory with SMPL_<GENDER>_clean.npz (else $SMPL18_MODELS); the "
+                            "model must carry the mesh (extract-model --with-mesh)")
+    scene.add_argument("--render-settings", action="append", type=Path, metavar="FILE",
+                       help="render settings file(s); defaults to the shipped configs/render/default.yaml")
+    scene.add_argument("--correctives", action="store_true",
+                       help="carry SMPL's pose blend shapes in as 207 shape keys")
+    scene.add_argument("--frames", metavar="START:STOP[:STEP]",
+                       help="a slice of the trial, to keep a long capture to a scene one can open")
+    scene.add_argument("--blender", help="the Blender executable; without it the plan is written "
+                                         "and the command to run printed")
+    scene.add_argument("--blend", action="store_true", help="save <out>/scene.blend")
+    scene.add_argument("--render", action="store_true", help="render PNG frames into <out>/frames")
+    scene.add_argument("--quiet", action="store_true", help="print only what was written")
 
     fbx = commands.add_parser("fbx2bvh", help="export an FBX animation to BVH with Blender")
     fbx.add_argument("--input", required=True, type=Path)
@@ -329,9 +369,124 @@ def info(args) -> int:
 def demo_models(args) -> int:
     from smpl18.model.demo import write_models
 
-    for path in write_models(args.out):
+    for path in write_models(args.out, with_mesh=args.with_mesh):
         print(f"wrote {path}")
-    print("these are a stand-in body with the SMPL-24 tree, for trying the pipeline only")
+    surface = " with a blocky surface" if args.with_mesh else ""
+    print(f"these are a stand-in body{surface} with the SMPL-24 tree, for trying the pipeline only")
+    return 0
+
+
+# --- out of the corpus again ----------------------------------------------------------------------
+
+
+def _subjects_and_trials(args):
+    """The corpus trials a command was pointed at, refusing a name the corpus does not have."""
+    from smpl18.corpus import read_corpus
+
+    corpus = read_corpus(args.corpus)
+    subject_ids = [args.subject] if args.subject else corpus.subject_ids()
+    if not subject_ids:
+        raise CommandError(f"{args.corpus} holds no subject")
+    for subject_id in subject_ids:
+        subject = corpus.subject(subject_id)
+        wanted = getattr(args, "trial", None)
+        wanted = [wanted] if isinstance(wanted, str) else wanted
+        for trial_id in wanted or subject.trial_ids():
+            yield subject.trial(trial_id)
+
+
+def export_smpl(args) -> int:
+    from smpl18.original import sequence_from_trial, write_sequence
+
+    trials = list(_subjects_and_trials(args))
+    single = args.out.suffix == ".npz"
+    if single and len(trials) > 1:
+        raise CommandError(f"--out is one file but {len(trials)} trials were selected; give a "
+                           "directory, or name one subject and one trial")
+    for trial in trials:
+        sequence = sequence_from_trial(trial)
+        path = args.out if single else args.out / f"{trial.subject.id}_{trial.id}.npz"
+        write_sequence(path, sequence, flat=args.poses == "flat")
+        measured = sum(1 for p in sequence.joint_provenance if p == "measured")
+        print(f"wrote {path}: {sequence.frames} frames at {sequence.fps:g} Hz, "
+              f"{sequence.gender}, poses {'(T, 72)' if args.poses == 'flat' else '(T, 24, 3)'}, "
+              f"{measured}/24 joints measured")
+    return 0
+
+
+def _frame_slice(text: str | None) -> slice | None:
+    """``START:STOP[:STEP]`` as a slice; an empty part means the end it stands for."""
+    if not text:
+        return None
+    parts = text.split(":")
+    if len(parts) not in (2, 3):
+        raise CommandError(f"--frames expects START:STOP[:STEP], got {text!r}")
+    try:
+        start, stop, *rest = (int(part) if part.strip() else None for part in parts)
+    except ValueError:
+        raise CommandError(f"--frames expects whole numbers, got {text!r}") from None
+    return slice(start, stop, rest[0] if rest else None)
+
+
+def blender(args) -> int:
+    from smpl18.blender import launch
+    from smpl18.blender import plan as scene_plan
+    from smpl18.model.load import Model
+
+    trials = list(_subjects_and_trials(args))
+    trial = trials[0]
+    if not args.trial and len(trials) > 1:
+        print(f"note: subject {trial.subject.id} has {len(trials)} trials; building {trial.id}. "
+              "Name another with --trial", file=sys.stderr)
+    files = args.render_settings or [launch.shipped_render_settings()]
+    settings, settings_files = launch.load_render_settings(files)
+    launch.validate_render_settings(settings)
+
+    model = Model.for_gender(trial.subject.gender, root=args.models)
+    if not model.has_mesh:
+        raise CommandError(
+            f"{model.path} carries no surface, only the skeleton. Extract the model again with "
+            "`smpl18 extract-model --with-mesh`, or write the stand-in body with "
+            "`smpl18 demo-models --with-mesh` to try this without SMPL"
+        )
+    if model.stand_in:
+        print("note: the body is the stand-in from `smpl18 demo-models`, a mannequin of blocks, "
+              "not SMPL", file=sys.stderr)
+
+    built = scene_plan.plan_for_trial(
+        trial, model,
+        correctives=args.correctives,
+        sample_frames=int(launch.render_setting(settings, "scene", "check_frames")),
+        tolerance=float(launch.render_setting(settings, "scene", "check_tolerance_m")),
+        leaf_reach=float(launch.render_setting(settings, "scene", "leaf_reach")),
+        frames=_frame_slice(args.frames),
+    )
+    built.about["render_settings"] = settings_files
+    plan_path = built.write(args.out / f"{trial.subject.id}_{trial.id}.plan.npz")
+    settings_path = launch.write_render_settings(plan_path.with_suffix(".render.json"), settings)
+    print(f"wrote {plan_path}: {built.frames} frames, {built.num_vertices} vertices, "
+          f"{'207 pose shape keys' if built.has_correctives else 'no pose blend shapes'}")
+    if not built.has_correctives and built.about["pose_blend_shapes_mm"] > 0:
+        print(f"note: leaving the pose blend shapes out moves the surface by up to "
+              f"{built.about['pose_blend_shapes_mm']:.1f} mm; pass --correctives to carry them in")
+
+    blend = args.out / "scene.blend" if args.blend else None
+    frames = args.out / "frames" if args.render else None
+    if args.blender is None:
+        command = launch.blender_command(
+            "blender", plan=plan_path, settings=settings_path,
+            blend=blend or args.out / "scene.blend", render=frames,
+        )
+        print("no --blender given, so nothing was built. Run:\n  " + " ".join(f'"{part}"'
+              if " " in part else part for part in command))
+        return 0
+    if blend is None and frames is None:
+        raise CommandError("with --blender, ask for --blend, --render, or both")
+    finished = launch.run_blender(args.blender, plan=plan_path, settings=settings_path,
+                                  blend=blend, render=frames, quiet=args.quiet)
+    for line in (finished.stdout or "").splitlines():
+        if line.startswith(("built ", "self-check", "saved ", "rendered ")):
+            print(line)
     return 0
 
 
@@ -424,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
         "info": info,
         "demo-models": demo_models,
         "extract-model": extract_model,
+        "export-smpl": export_smpl,
+        "blender": blender,
         "fbx2bvh": fbx2bvh,
     }
     try:

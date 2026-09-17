@@ -7,9 +7,12 @@ import pytest
 import yaml
 
 from smpl18 import __version__, cli, synthetic
+from smpl18.blender import launch
+from smpl18.blender.plan import read_plan
 from smpl18.cli import main
 from smpl18.corpus import read_corpus
 from smpl18.formats import trc
+from smpl18.model import load
 from smpl18.model.demo import demo_model, write_models
 from smpl18.skeleton.kinematics import rest_joints
 
@@ -182,3 +185,147 @@ def test_warnings_are_printed(workspace, tmp_path, capsys) -> None:
     assert "warning:" in capsys.readouterr().err
     assert main(["info", str(out)]) == 0
     assert "warning:" in capsys.readouterr().out
+
+# --- out of the corpus again ----------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def rendered(workspace, tmp_path_factory):
+    """A corpus with a surfaced stand-in body, converted from SMPL parameters (which is quick)."""
+    root = tmp_path_factory.mktemp("scene")
+    write_models(root / "models", with_mesh=True)
+    model = demo_model(with_mesh=True)
+    local, trans = synthetic.walking_motion(12, 50.0, seed=6)
+    np.savez(root / "walk.npz", poses=synthetic.rotations_to_axis_angle(local), trans=trans,
+             betas=np.zeros(10), mocap_framerate=50.0)
+    np.savez(root / "stand.npz", poses=synthetic.rotations_to_axis_angle(local[:6]),
+             trans=trans[:6], betas=np.zeros(10), mocap_framerate=50.0)
+    assert main(["convert", "smpl", "--input", str(root / "walk.npz"), str(root / "stand.npz"),
+                 "--up-axis", "y", "--settings", str(workspace / "quick.yaml"),
+                 "--models", str(root / "models"), "--out", str(root / "corpus"),
+                 "--subject-id", "S01", "--gender", "neutral", "--quiet"]) == 0
+    del model
+    return root
+
+
+def test_demo_models_can_carry_a_surface(tmp_path, capsys) -> None:
+    assert main(["demo-models", "--out", str(tmp_path), "--with-mesh"]) == 0
+    assert "blocky surface" in capsys.readouterr().out
+    body = load(tmp_path / "SMPL_NEUTRAL_clean.npz")
+    assert body.has_mesh and body.stand_in and body.faces.shape[1] == 3
+    assert load(tmp_path / "SMPL_MALE_clean.npz").weights is not None
+
+
+def test_export_smpl_writes_one_file_per_trial(rendered, tmp_path, capsys) -> None:
+    out = tmp_path / "smpl"
+    assert main(["export-smpl", "--corpus", str(rendered / "corpus"), "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "S01_walk.npz" in printed and "S01_stand.npz" in printed
+    assert "18/24 joints measured" in printed
+    with np.load(out / "S01_walk.npz", allow_pickle=False) as data:
+        assert data["poses"].shape == (12, 72)
+        assert float(data["mocap_framerate"]) == 50.0
+
+
+def test_export_smpl_writes_one_named_file(rendered, tmp_path) -> None:
+    target = tmp_path / "one.npz"
+    assert main(["export-smpl", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--out", str(target), "--poses", "grouped"]) == 0
+    with np.load(target, allow_pickle=False) as data:
+        assert data["poses"].shape == (12, 24, 3)
+
+
+def test_export_smpl_will_not_put_several_trials_in_one_file(rendered, tmp_path, capsys) -> None:
+    code = main(["export-smpl", "--corpus", str(rendered / "corpus"), "--out",
+                 str(tmp_path / "one.npz")])
+    assert code == 2
+    assert "give a directory" in capsys.readouterr().err
+
+
+def test_blender_writes_a_plan_and_prints_how_to_run_it(rendered, tmp_path, capsys) -> None:
+    out = tmp_path / "scene"
+    assert main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(rendered / "models"), "--out", str(out),
+                 "--blend"]) == 0
+    printed = capsys.readouterr()
+    assert "12 frames" in printed.out and "no --blender given" in printed.out
+    assert "scene.py" in printed.out and "--plan" in printed.out
+    assert "mannequin of blocks" in printed.err
+    plan = read_plan(out / "S01_walk.plan.npz")
+    assert plan.frames == 12 and plan.about["subject"] == "S01"
+    assert plan.about["render_settings"][0]["path"] == "default.yaml"
+    settings = json.loads((out / "S01_walk.plan.render.json").read_text(encoding="utf-8"))
+    assert settings["render"]["engine"] == "cycles"
+
+
+def test_blender_takes_a_slice_and_the_correctives(rendered, tmp_path, capsys) -> None:
+    out = tmp_path / "scene"
+    assert main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(rendered / "models"), "--out", str(out),
+                 "--frames", "2:10:2", "--correctives", "--render"]) == 0
+    assert "207 pose shape keys" in capsys.readouterr().out
+    plan = read_plan(out / "S01_walk.plan.npz")
+    assert plan.frames == 4 and plan.has_correctives
+
+
+def test_blender_says_which_trial_it_chose(rendered, tmp_path, capsys) -> None:
+    assert main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--models", str(rendered / "models"), "--out", str(tmp_path / "scene"),
+                 "--blend"]) == 0
+    assert "has 2 trials; building stand" in capsys.readouterr().err
+
+
+def test_blender_needs_a_model_with_a_surface(workspace, rendered, tmp_path, capsys) -> None:
+    code = main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(workspace / "models"),
+                 "--out", str(tmp_path / "scene"), "--blend"])
+    assert code == 2
+    assert "extract-model --with-mesh" in capsys.readouterr().err
+
+
+def test_a_frame_range_must_be_a_range(rendered, tmp_path, capsys) -> None:
+    code = main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(rendered / "models"),
+                 "--out", str(tmp_path / "scene"), "--frames", "10", "--blend"])
+    assert code == 2
+    assert "START:STOP" in capsys.readouterr().err
+
+
+def test_blender_is_run_on_the_plan_when_one_is_named(rendered, tmp_path, monkeypatch,
+                                                     capsys) -> None:
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+
+        class Done:
+            returncode = 0
+            stdout = ("Blender 4.2\nbuilt S01/walk: 12 frames, 224 vertices, 24 bones\n"
+                      "self-check: 3 frames, worst vertex 0.0001 mm from this package's own "
+                      "skinning (tolerance 0.2000 mm)\nsaved scene.blend\n")
+            stderr = ""
+        return Done()
+
+    monkeypatch.setattr(launch.subprocess, "run", fake_run)
+    out = tmp_path / "scene"
+    assert main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(rendered / "models"), "--out", str(out),
+                 "--blender", "blender", "--blend"]) == 0
+    printed = capsys.readouterr().out
+    assert "self-check: 3 frames" in printed and "saved scene.blend" in printed
+    assert "Blender 4.2" not in printed                      # only what the script reported
+    command = seen["command"]
+    assert command[:3] == ["blender", "--background", "--factory-startup"]
+    after = command[command.index("--") + 1:]
+    assert after[after.index("--plan") + 1] == str(out / "S01_walk.plan.npz")
+    assert "--render" not in after
+
+
+def test_blender_asks_what_to_build(rendered, tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(launch.subprocess, "run",
+                        lambda command, **kwargs: pytest.fail("Blender should not have run"))
+    code = main(["blender", "--corpus", str(rendered / "corpus"), "--subject", "S01",
+                 "--trial", "walk", "--models", str(rendered / "models"),
+                 "--out", str(tmp_path / "scene"), "--blender", "blender"])
+    assert code == 2
+    assert "--blend, --render, or both" in capsys.readouterr().err

@@ -339,6 +339,54 @@ convert.write_subject_corpus("corpus", subject=subject, model=model, trials=tria
 
 ---
 
+## Out again: plain SMPL, and Blender
+
+The corpus stores 18 joints. Everything else that reads bodies reads the original 24-joint SMPL
+structure, so there are two ways back out, and neither re-fits anything —
+[`docs/blender.md`](docs/blender.md) is the full guide.
+
+**SMPL parameters**, for any SMPL reader:
+
+```bash
+smpl18 export-smpl --corpus corpus --out smpl/
+```
+
+`poses [T, 72]` axis-angle, `betas`, `trans`, `mocap_framerate`, `gender`, with the four frozen
+joints at the subject's constants and the hands at identity. `joint_provenance` comes along, now
+over all 24 joints (`constant` for a frozen one, `absent` for a hand), so what was observed is
+still distinguishable from what was inferred. Reading such a file back with `smpl18 convert smpl`
+returns the same rotations.
+
+**A body moving in Blender**:
+
+```bash
+smpl18 extract-model --pkl basicmodel_neutral_*.pkl --gender neutral --num-betas 10 \
+    --out smpl18-models --with-mesh          # the weights and pose blend shapes a render needs
+smpl18 blender --corpus corpus --subject S01 --trial walk01 \
+    --models smpl18-models --out scene/ --blend --render \
+    --blender "C:/Program Files/Blender Foundation/Blender 4.2/blender.exe"
+```
+
+You get an ordinary Blender rig: the shaped surface skinned to 24 bones, keyframed, with a camera,
+a sun and a floor — plus a `.blend` and PNG frames if you asked for them. Without `--blender` the
+scene plan is written and the command to run is printed, which is what to do on a machine that has
+no Blender. Without any SMPL model, `smpl18 demo-models --with-mesh` writes a mannequin of blocks
+so the whole path runs anyway.
+
+Two things worth knowing:
+
+- **The bone convention cannot be got wrong.** The plan carries each joint's rest-to-posed
+  transform, not rotations to interpret; Blender's own rest matrices cancel out of its skinning, so
+  nothing depends on how the bones are drawn. The scene then *checks itself* against vertices
+  computed here and refuses to save if it is off by more than a fifth of a millimetre.
+- **Pose blend shapes** (SMPL's 207 `posedirs`) are left out by default, and the command prints how
+  far that moves the surface; `--correctives` carries them in as shape keys.
+
+Every number a render uses lives in [`configs/render/default.yaml`](configs/render/default.yaml),
+as with conversion settings; nothing is defaulted in code.
+
+---
+
 ## How it works
 
 1. **Targets.** Every source is brought to the same form in the corpus frame:

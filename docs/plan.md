@@ -63,6 +63,7 @@ smpl18/
 │   ├── plan.md               this document
 │   ├── primer.md             SMPL-24, reaching it from SMPL or markers, the 18-joint reduction
 │   ├── corpus-format.md      the on-disk corpus, versioned
+│   ├── blender.md            out again: SMPL parameters, and a scene in Blender
 │   ├── profile-schema.md     what a profile may say, field by field
 │   └── kinds/                one page per source kind
 ├── configs/                  DATA, never code
@@ -70,10 +71,12 @@ smpl18/
 │   ├── correspondence/       source joint/centre names -> SMPL-24 joints, fill rules, lumbar block
 │   ├── markersets/           marker labels -> joint-centre rules and segment frames
 │   ├── offsets/              landmark offset tables
+│   ├── render/               every number a Blender scene uses
 │   └── settings/             every number the engine uses
 ├── examples/                 one runnable script per kind of input, on synthetic captures
 ├── src/smpl18/
-│   ├── __init__.py  cli.py  convert.py  corpus.py  synthetic.py
+│   ├── __init__.py  cli.py  convert.py  corpus.py  synthetic.py  mesh.py  original.py
+│   ├── blender/     plan.py  launch.py  scene.py (runs inside Blender; imports bpy, not smpl18)
 │   ├── model/        extract.py  load.py  select.py  demo.py (the stand-in body)
 │   ├── skeleton/     definition.py  rotations.py  kinematics.py  frames.py
 │   ├── formats/      npz.py  pickle_safe.py  jsonfile.py  osim.py  mot.py  trc.py  c3d.py  b3d.py  bvh.py  mat.py  _vendor/
@@ -242,8 +245,12 @@ smpl18 convert smpl     --input <npz>... --up-axis <x|y|z> [--fps] ...
     common: --settings <yaml>... --models <dir> --out <corpus>
             (--subject <yaml> | --subject-id <id> --gender <g>) [--measurement NAME=METRES]...
 smpl18 extract-model --pkl <file> --gender <g> --num-betas <n> --out <dir> [--with-mesh]
-smpl18 demo-models --out <dir>
+smpl18 demo-models --out <dir> [--with-mesh]
 smpl18 info <corpus> [--json]
+smpl18 export-smpl --corpus <corpus> [--subject <id>] [--trial <id>]... --out <dir|npz> [--poses flat|grouped]
+smpl18 blender --corpus <corpus> --subject <id> [--trial <id>] --out <dir> [--models <dir>]
+    [--render-settings <yaml>]... [--correctives] [--frames START:STOP[:STEP]]
+    [--blender <exe>] [--blend] [--render]
 smpl18 fbx2bvh --input <clip.fbx> --blender <exe> --out <clip.bvh>
 smpl18 profile validate <name-or-path>
 smpl18 profile show <name-or-path>
@@ -252,6 +259,32 @@ smpl18 profile show <name-or-path>
 The `convert` subcommands are named after the data a user has, not after the source kinds,
 because that is the question a user starts from; the manifest records the kind. A subcommand is
 added only together with the module it fronts, so no command exists without an implementation.
+
+### 3.9 Out again: the surface, SMPL parameters, Blender
+
+A corpus that nothing can read is of no use, and what other tools read is the 24-joint structure.
+Two exits, neither of which re-fits anything (`docs/blender.md`):
+
+- **`smpl18.original`** writes a trial as ordinary SMPL parameters. The pose is
+  `CorpusTrial.poses_24()`, so the frozen joints carry the subject's constants and the hands
+  identity; `joint_provenance` widens from 18 to 24 entries, a frozen joint reading `constant` and a
+  hand `absent`, so the file still distinguishes what was observed. `smpl18 convert smpl` reads its
+  own output back to the same rotations, which is the round trip the tests check.
+- **`smpl18.mesh`** adds the two steps between a pose and a surface that a conversion never needed:
+  the pose blend shapes and linear blend skinning. Its `lbs_transforms` is the piece a renderer
+  wants — one rigid transform per joint per frame.
+- **`smpl18.blender`** splits in two so that nothing has to be true of both interpreters.
+  `plan.py` writes one npz holding the rest surface, the weights and those transforms; `launch.py`
+  resolves `configs/render/*.yaml` and runs Blender on it; `scene.py` runs *inside* Blender,
+  importing `bpy` and nothing from this package.
+
+  The plan carries transforms rather than rotations on purpose. Blender deforms a vertex group by
+  `pose.matrix @ bone.matrix_local⁻¹`, so asking for `pose.matrix = A_j @ bone.matrix_local` cancels
+  the bone's rest matrix out of the result: no convention about bone directions, rolls or axes has
+  to be agreed between the two sides, and the rig can be drawn along the body without a correction.
+  A test proves the cancellation over random rest matrices. Since that is a proof about algebra and
+  not about Blender, the plan also carries a few frames of vertices computed here and the scene
+  compares its own deformation with them, saving nothing if it is off.
 
 ---
 
@@ -264,6 +297,7 @@ added only together with the module it fronts, so no command exists without an i
 | Repository | private while the work is in progress |
 | `.c3d` reading | `ezc3d`, a regular dependency |
 | FBX | a Blender bridge (`smpl18 fbx2bvh`); native FBX reading is out of scope |
+| Rendering | Blender, driven as an executable, never imported. The scene is described by a plan of per-joint transforms, so Blender's bone conventions cancel; the script it runs checks its own skinning against `smpl18.mesh` and refuses to save when it differs |
 | Profiles that cannot be published | kept outside this repository and found through `SHARED_DATASET_PATH` |
 
 ---
@@ -282,6 +316,7 @@ added only together with the module it fronts, so no command exists without an i
 | Corpus: write, read, summary, 24-joint rebuild | **done** |
 | `convert markers / centres / opensim / bvh / smpl`, `info`, `extract-model`, `demo-models`, `fbx2bvh` | **done** |
 | Examples for every kind, run as tests; round trips per format on synthetic captures | **done** |
+| Out again: `export-smpl` (the 24-joint SMPL structure) and `blender` (a scene, checked against `smpl18.mesh` inside Blender) | **done** |
 | Repair: wrap, resample, discontinuity scan | next |
 | `convert --profile`: whole datasets through their profiles (layout, bindings, pooling, repairs) | next |
 | Validation against real captures with independent joint centres | with the first real corpus |

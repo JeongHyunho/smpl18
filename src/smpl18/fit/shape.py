@@ -16,6 +16,16 @@ Two steps, both on the subject's pooled frames:
 Both objectives are means of squared distances (m^2) plus ``prior_weight * |beta|^2``, so the one
 weight means the same thing in both. Ten betas cannot reach every body; the residuals are
 returned so the corpus can say how far the fit got.
+
+The basis follows the model's left/right symmetry mode (:mod:`smpl18.skeleton.symmetry`). Both
+steps also hold the left and right sides equal, with ``w = lr_equality_weight``: the bone-length
+step adds ``w (l_L - l_R)`` for every left/right couple of observed rigid pairs, and the
+refinement adds ``w^2 |A(J0 + D beta)|^2`` over the observed joints whose mirror partner is
+observed too, ``A`` being the antisymmetric part -- still quadratic in the betas, so still closed
+form. On the ``skeleton`` basis both terms are zero whatever the betas (and are left out, so the
+weight cannot change the fit); on ``template`` they hold down what the unmirrored shape directions
+would put between the sides; on ``none`` the condition is refused
+(:meth:`ShapeSettings.check_symmetry`).
 """
 
 from __future__ import annotations
@@ -31,6 +41,12 @@ from smpl18.model.load import Model
 from smpl18.reduce.fit import sample_indices
 from smpl18.skeleton.definition import CHILDREN, JOINT_NAMES, NUM_JOINTS, PARENTS
 from smpl18.skeleton.kinematics import fk_batch, rest_joints
+from smpl18.skeleton.symmetry import (
+    MIRROR_PARTNER,
+    antisymmetric_part,
+    mirror_pairs,
+    symmetric_part,
+)
 
 from .pose import PoseSettings, solve_pose
 from .targets import Targets
@@ -46,7 +62,8 @@ __all__ = [
 ]
 
 SETTINGS_SECTION = "shape"
-_SETTING_NAMES = ("betas", "prior_weight", "optimiser", "sample_frames", "refinements")
+_SETTING_NAMES = ("betas", "prior_weight", "optimiser", "sample_frames", "refinements",
+                  "lr_equality_weight")
 
 
 @dataclass(frozen=True)
@@ -61,6 +78,9 @@ class ShapeSettings:
     sample_frames: int
     #: Pose-then-betas rounds after the bone-length step; zero keeps the bone-length betas.
     refinements: int
+    #: ``w`` of the left/right equality condition (per metre of length or position difference);
+    #: zero leaves it out.
+    lr_equality_weight: float
 
     @classmethod
     def from_settings(cls, settings: Mapping[str, Any]) -> ShapeSettings:
@@ -81,15 +101,34 @@ class ShapeSettings:
             optimiser=str(section["optimiser"]),
             sample_frames=int(section["sample_frames"]),
             refinements=int(section["refinements"]),
+            lr_equality_weight=float(section["lr_equality_weight"]),
         )
         if values.betas < 0 or values.refinements < 0 or values.sample_frames < 1:
             raise ValueError(
                 f"{SETTINGS_SECTION}.betas and .refinements must not be negative and "
                 ".sample_frames must be at least 1"
             )
-        if values.prior_weight < 0:
-            raise ValueError(f"{SETTINGS_SECTION}.prior_weight must not be negative")
+        if values.prior_weight < 0 or values.lr_equality_weight < 0:
+            raise ValueError(
+                f"{SETTINGS_SECTION}.prior_weight and .lr_equality_weight must not be negative"
+            )
         return values
+
+    def check_symmetry(self, symmetry: str) -> None:
+        """Refuse the equality condition on SMPL's own skeleton (``none``).
+
+        There the template's antisymmetric part ``A(J0)`` is an offset no beta removes, and the
+        refinement's ``w^2 |A(J0 + D beta)|^2`` at a useful weight outweighs the targets: on a
+        lopsided test body it left the sides further apart than no condition at all and more
+        than tripled the bone error. ``none`` is meant as SMPL's fit as it was, which is
+        ``lr_equality_weight`` 0; the condition belongs with a mirrored template.
+        """
+        if symmetry == "none" and self.lr_equality_weight:
+            raise ValueError(
+                f"{SETTINGS_SECTION}.lr_equality_weight must be 0 with model.symmetry none: on "
+                "SMPL's own template the condition cannot be met and would outweigh the targets "
+                "(use model.symmetry template or skeleton to have the sides equal)"
+            )
 
 
 @dataclass(frozen=True)
@@ -109,13 +148,23 @@ class ShapeFit:
     frames_used: int
     refinements: int
     fitted_betas: int
+    #: The model's left/right symmetry mode the betas were fitted on.
+    model_symmetry: str
+    #: ``w`` of the left/right equality condition.
+    lr_equality_weight: float
+    #: Largest ``|l_L - l_R|`` over the left/right couples of fitted rigid pairs, metres (NaN
+    #: when no couple was observed on both sides).
+    lr_max_difference_m: float
 
 
 def shape_basis(model: Model, count: int) -> tuple[np.ndarray, np.ndarray]:
-    """``J0 (24, 3)`` and ``D (24, 3, count)`` with ``J(beta) = J0 + D @ beta``."""
+    """``J0 (24, 3)`` and ``D (24, 3, count)`` with ``J(beta) = J0 + D @ beta``, on the model's
+    symmetry mode: ``J0`` is mirrored in ``template`` and ``skeleton``, ``D`` in ``skeleton``."""
     count = min(count, model.num_betas)
     base = rest_joints(model, np.zeros(0))
     directions = np.einsum("jv,vib->jib", model.J_regressor, model.shapedirs[:, :, :count])
+    if model.symmetry == "skeleton":
+        directions = symmetric_part(directions)
     return base, directions
 
 
@@ -157,6 +206,15 @@ def measured_lengths(targets: Targets, pairs) -> dict[tuple[int, int], float]:
     return out
 
 
+def _symmetric(base, directions) -> bool:
+    """Whether ``J0 + D beta`` is its own mirror image for every beta (the ``skeleton`` basis).
+
+    The equality condition is then zero whatever the betas and is left out: carried along as
+    rows of exact zeros it would still nudge the optimiser's path through rounding alone.
+    """
+    return not (np.any(antisymmetric_part(base)) or np.any(antisymmetric_part(directions)))
+
+
 def _bone_step(base, directions, lengths, options: ShapeSettings) -> np.ndarray:
     count = directions.shape[2]
     if not lengths or count == 0:
@@ -167,19 +225,32 @@ def _bone_step(base, directions, lengths, options: ShapeSettings) -> np.ndarray:
     wanted = np.array([lengths[p] for p in pairs])
     scale = 1.0 / np.sqrt(len(pairs))
     prior = np.sqrt(options.prior_weight)
+    row = {pair: index for index, pair in enumerate(pairs)}
+    couples = [(row[left], row[right]) for left, right in mirror_pairs(pairs)]
+    equality = options.lr_equality_weight if couples else 0.0
+    if equality and _symmetric(base, directions):
+        equality = 0.0
+    left = np.array([a for a, _ in couples], dtype=np.int64)
+    right = np.array([b for _, b in couples], dtype=np.int64)
 
     def residual(beta):
         joints = base + directions @ beta
         model_lengths = np.linalg.norm(joints[second] - joints[first], axis=1)
-        return np.concatenate([scale * (model_lengths - wanted), prior * beta])
+        parts = [scale * (model_lengths - wanted), prior * beta]
+        if equality:
+            parts.append(equality * (model_lengths[left] - model_lengths[right]))
+        return np.concatenate(parts)
 
     return least_squares(residual, np.zeros(count), method=options.optimiser).x
 
 
-def _linear_step(base, directions, local, targets: Targets, prior_weight) -> tuple[np.ndarray, float]:
+def _linear_step(base, directions, local, targets: Targets, prior_weight,
+                 lr_equality_weight=0.0) -> tuple[np.ndarray, float]:
     """Betas that best place every observed centre with the rotations ``local`` held.
 
     Each frame's translation is free and eliminated by centring that frame on its weighted mean.
+    The equality condition adds ``w^2 |A(J0 + D beta)|^2`` over the observed joints whose mirror
+    partner is observed too; the returned RMS is the positions' alone.
     """
     frames = local.shape[0]
     count = directions.shape[2]
@@ -206,6 +277,16 @@ def _linear_step(base, directions, local, targets: Targets, prior_weight) -> tup
     mass = weight.sum()
     lhs = np.einsum("tk,tkib,tkic->bc", weight, design, design) / mass
     rhs = -np.einsum("tk,tkib,tki->b", weight, design, offset) / mass
+    if lr_equality_weight and not _symmetric(base, directions):
+        seen = {int(j) for j, any_valid in zip(columns.joints, columns.valid.any(axis=0))
+                if any_valid}
+        paired = sorted(j for j in seen if MIRROR_PARTNER[j] in seen)
+        if paired:
+            apart = antisymmetric_part(base)[paired]
+            apart_by = antisymmetric_part(directions)[paired]
+            square = lr_equality_weight**2
+            lhs = lhs + square * np.einsum("jib,jic->bc", apart_by, apart_by)
+            rhs = rhs - square * np.einsum("jib,ji->b", apart_by, apart)
     beta = np.linalg.solve(lhs + prior_weight * np.eye(count), rhs)
     error = np.einsum("tkib,b->tki", design, beta) + offset
     rms = float(np.sqrt(np.einsum("tk,tki,tki->", weight, error, error) / mass))
@@ -215,9 +296,12 @@ def _linear_step(base, directions, local, targets: Targets, prior_weight) -> tup
 def fit_shape(model: Model, targets: Targets, settings: Mapping[str, Any]) -> ShapeFit:
     """Fit the subject's betas to ``targets``, which may pool several trials end to end.
 
-    The refinement's pose solves use the ``pose`` settings, positions only.
+    The refinement's pose solves use the ``pose`` settings, positions only. The skeleton is the
+    one the model's own symmetry mode builds (a conversion sets that mode from ``model.symmetry``
+    before it gets here).
     """
     options = ShapeSettings.from_settings(settings)
+    options.check_symmetry(model.symmetry)
     pose_options = PoseSettings.from_settings(settings)
     base, directions = shape_basis(model, options.betas)
     width = model.num_betas
@@ -238,16 +322,20 @@ def fit_shape(model: Model, targets: Targets, settings: Mapping[str, Any]) -> Sh
                 rest = base + directions @ beta
                 pose = solve_pose(rest, sample, settings, positions_only=True)
                 beta, position_rms = _linear_step(base, directions, pose.local, sample,
-                                                  options.prior_weight)
+                                                  options.prior_weight,
+                                                  options.lr_equality_weight)
 
     joints = base + directions @ beta
     bones = {}
+    fitted = {}
     for (a, b), wanted in lengths.items():
         length = float(np.linalg.norm(joints[b] - joints[a]))
+        fitted[(a, b)] = length
         bones[f"{JOINT_NAMES[a]}-{JOINT_NAMES[b]}"] = {
             "measured_m": wanted, "model_m": length, "difference_m": length - wanted,
         }
     differences = np.array([entry["difference_m"] for entry in bones.values()])
+    sides = [abs(fitted[left] - fitted[right]) for left, right in mirror_pairs(list(lengths))]
     full = np.zeros(width)
     full[: beta.size] = beta
     return ShapeFit(
@@ -258,4 +346,7 @@ def fit_shape(model: Model, targets: Targets, settings: Mapping[str, Any]) -> Sh
         frames_used=frames_used,
         refinements=options.refinements if frames_used else 0,
         fitted_betas=int(beta.size),
+        model_symmetry=model.symmetry,
+        lr_equality_weight=options.lr_equality_weight,
+        lr_max_difference_m=float(max(sides)) if sides else float("nan"),
     )

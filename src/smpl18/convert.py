@@ -16,6 +16,11 @@ A subject's trials are then fitted together (:func:`fit_subject`): the betas on 
 frames, a pose per trial, and the four frozen-joint constants of the 18-joint reduction on the
 pooled poses. :func:`write_subject_corpus` writes the result in the corpus format.
 
+The rest skeleton's left/right symmetry mode is a setting (``model.symmetry``,
+:mod:`smpl18.skeleton.symmetry`). In a conversion the settings decide it: every function here that
+takes a model and the settings puts the model on that mode first, so the manifests' copy of the
+settings says which skeleton the corpus was fitted on, and the subject record says it again.
+
 Nothing here knows a dataset. The tables (marker set, correspondence) and the settings file say
 everything that differs between sources.
 """
@@ -59,6 +64,8 @@ from smpl18.skeleton.definition import (
 from smpl18.skeleton.frames import FrameChange, frame_change, transform_for_gravity
 from smpl18.skeleton.kinematics import fk_batch, rest_joints
 from smpl18.skeleton.rotations import axis_angle_to_matrix, matrix_to_axis_angle
+from smpl18.skeleton.symmetry import SETTINGS_SECTION as MODEL_SECTION
+from smpl18.skeleton.symmetry import symmetry_setting
 from smpl18.sources.base import Provenance
 from smpl18.sources.markers import MarkerSet, fill_gaps, length_scale
 from smpl18.sources.subject import SubjectInfo
@@ -118,12 +125,13 @@ def validate_settings(settings: Mapping[str, Any], kind: str) -> None:
     from smpl18.reduce import FitSettings
 
     _output_up(settings)
+    symmetry = symmetry_setting(settings)
     FitSettings.from_settings(settings)
     _check_settings(settings)
     if kind != "smpl_parameters":
         from smpl18.fit.shape import ShapeSettings
 
-        ShapeSettings.from_settings(settings)
+        ShapeSettings.from_settings(settings).check_symmetry(symmetry)
         PoseSettings.from_settings(settings)
     if kind == "marker_trajectories":
         _setting(settings, "markers", "max_gap_frames")
@@ -141,6 +149,11 @@ def _setting(settings: Mapping[str, Any], section: str, key: str):
         return settings[section][key]
     except (KeyError, TypeError):
         raise ConversionError(f"settings is missing {section}.{key}") from None
+
+
+def _configured(model: Model, settings: Mapping[str, Any]) -> Model:
+    """``model`` on the rest skeleton the settings ask for (``model.symmetry``)."""
+    return model.with_symmetry(symmetry_setting(settings))
 
 
 @dataclass
@@ -384,7 +397,13 @@ def parameter_trial(path: str | Path, *, model: Model, up_axis: str | None,
     carried onto SMPL, and its pelvis sits elsewhere. Convert an SMPL-X sequence's joint
     positions with :func:`centre_trial` instead. A frame with a non-finite pose or translation
     is marked invalid and holds its nearest valid frame.
+
+    The rotations are kept as they are and put on the skeleton ``model.symmetry`` names, so on a
+    symmetric one the joints sit where that skeleton puts them, not where SMPL's own would (by the
+    model's asymmetry at the stored betas, :mod:`smpl18.skeleton.symmetry`); the translation keeps
+    its meaning, ``p_0 = j_0 + trans``, with ``j_0`` that skeleton's pelvis.
     """
+    model = _configured(model, settings)
     path = Path(path)
     data = npz_format.read(path)
     for key in (poses_key, trans_key, betas_key):
@@ -474,6 +493,8 @@ class SubjectFit:
     calibration: dict[str, np.ndarray]
     #: For SMPL parameters: the largest difference between the trials' betas.
     betas_spread: float | None
+    #: The left/right symmetry mode of the rest skeleton everything above was fitted on.
+    model_symmetry: str
 
 
 def _aligned(trials: Sequence[TrialInput]) -> Targets:
@@ -556,10 +577,12 @@ def fit_subject(model: Model, trials: Sequence[TrialInput], settings: Mapping[st
     """Shape on the pooled frames, a pose per trial, then the reduction constants.
 
     The orientation constants are calibrated once on all of the subject's trials, so a segment
-    seen only through its own frame keeps one neutral twist across them.
+    seen only through its own frame keeps one neutral twist across them. The rest skeleton is the
+    one ``model.symmetry`` names.
     """
     if not trials:
         raise ConversionError("no trials to fit")
+    model = _configured(model, settings)
     kinds = {t.kind for t in trials}
     if len(kinds) != 1:
         raise ConversionError(f"one subject's trials must share a source kind, got {sorted(kinds)}")
@@ -614,7 +637,7 @@ def fit_subject(model: Model, trials: Sequence[TrialInput], settings: Mapping[st
         betas=betas, rest=rest, shape=shape, poses=poses, local=local, trans=trans,
         frame_valid=valid, constants=constants,
         per_joint_rms_m=per_joint_rms(sample, rest, constants.constants),
-        calibration=calibration, betas_spread=spread,
+        calibration=calibration, betas_spread=spread, model_symmetry=model.symmetry,
     )
 
 
@@ -732,6 +755,11 @@ def write_subject_corpus(out: str | Path, *, subject: SubjectInfo, model: Model,
     subject_dir = out / subject.id
     stale = check_subject_free(out, subject.id, replace=replace)
     validate_settings(settings, trials[0].kind)
+    if symmetry_setting(settings) != fit.model_symmetry:
+        raise ConversionError(
+            f"the fit was made on the {fit.model_symmetry!r} skeleton but the settings name "
+            f"{symmetry_setting(settings)!r}; write it with the settings it was fitted with"
+        )
     output_up = _output_up(settings)
     limits = _check_settings(settings)
     constants = fit.constants
@@ -784,7 +812,8 @@ def write_subject_corpus(out: str | Path, *, subject: SubjectInfo, model: Model,
             "repairs": trial.repairs,
             "discontinuities": [],
             "settings": {key: settings[key] for key in
-                         ("output", "shape", "pose", "markers", "reduce", CHECKS_SECTION)
+                         ("output", MODEL_SECTION, "shape", "pose", "markers", "reduce",
+                          CHECKS_SECTION)
                          if key in settings},
             "settings_files": settings_files,
             "settings_sha256": settings_hash,
@@ -803,6 +832,7 @@ def write_subject_corpus(out: str | Path, *, subject: SubjectInfo, model: Model,
         "model_file": None if model.path is None else model.path.name,
         "model_sha256": model.sha256,
         "model_is_stand_in": bool(model.stand_in),
+        "model_symmetry": fit.model_symmetry,
         "betas": fit.betas,
         "subject_file": subject.record(),
         "fit": None if fit.shape is None else {
@@ -813,6 +843,9 @@ def write_subject_corpus(out: str | Path, *, subject: SubjectInfo, model: Model,
             "frames_used": fit.shape.frames_used,
             "refinements": fit.shape.refinements,
             "prior_weight": settings["shape"]["prior_weight"],
+            "model_symmetry": fit.shape.model_symmetry,
+            "lr_equality_weight": fit.shape.lr_equality_weight,
+            "lr_max_difference_m": fit.shape.lr_max_difference_m,
         },
         "betas_spread_across_trials": fit.betas_spread,
         "reduced_model": {

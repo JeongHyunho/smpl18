@@ -109,6 +109,21 @@ def test_a_trial_becomes_a_plan_with_its_subject_on_it(corpus, body) -> None:
     np.testing.assert_allclose(carried, trial.joints_world(body), atol=1e-12)
 
 
+def test_a_plan_names_the_skeleton_it_was_built_on(corpus, body, walk) -> None:
+    """Built by hand it is the model's mode; built for a trial it is the subject record's."""
+    local, trans = walk
+    for mode in ("none", "template", "skeleton"):
+        plan = build_plan(body.with_symmetry(mode), betas=np.zeros(10), local=local, trans=trans,
+                          fps=50.0, up_axis="y", correctives=False, sample_frames=0,
+                          tolerance=0.0, leaf_reach=0.7)
+        assert plan.about["model_symmetry"] == mode
+    trial = corpus.subject("S01").trial("walk")
+    assert trial.subject.model_symmetry == "skeleton"          # converted with default.yaml
+    plan = plan_for_trial(trial, body.with_symmetry("none"), correctives=False, sample_frames=0,
+                          tolerance=0.0, leaf_reach=0.7)
+    assert plan.about["model_symmetry"] == "skeleton"
+
+
 def test_a_frame_range_takes_that_slice(corpus, body) -> None:
     trial = corpus.subject("S01").trial("walk")
     plan = plan_for_trial(trial, body, correctives=False, sample_frames=2, tolerance=2e-4,

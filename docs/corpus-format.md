@@ -39,10 +39,11 @@ it is source-specific: the source is described, not assumed.
 | `gender` | `male` / `female` / `neutral`, and `gender_source` (`source_field` / `declared_neutral_unknown` / `subject_file` / `user_argument`: where the gender itself came from) |
 | `model_file`, `model_sha256` | the extracted model actually used |
 | `model_is_stand_in` | true when the model was the stand-in body of `smpl18 demo-models`, not SMPL |
+| `model_symmetry` | the rest skeleton's left/right mode the subject was fitted on (settings `model.symmetry`): `skeleton` (template and shape directions mirrored, left and right bones equal), `template` (template only) or `none` (SMPL's own). A reader rebuilds joints on this skeleton; a record without the key predates the modes and means `none` |
 | `subject_file` | where the subject's id, gender and measurements came from, and the measurements |
 | `betas` | float list, model width |
 | `bone_scale` | absent, or per-bone factors when the rest skeleton was rescaled beyond the beta space |
-| `fit` | the shape fit: `bone_lengths` (per rigid pair: measured, model, difference), `bone_rms_m`, `position_rms_m` on the refinement sample, `frames_used`, `refinements`, `betas_fitted`, `prior_weight`; `null` for SMPL parameters, whose betas are taken as stored |
+| `fit` | the shape fit: `bone_lengths` (per rigid pair: measured, model, difference), `bone_rms_m`, `position_rms_m` on the refinement sample, `frames_used`, `refinements`, `betas_fitted`, `prior_weight`, `model_symmetry`, `lr_equality_weight` (the left/right equality condition's weight) and `lr_max_difference_m` (the largest left-minus-right length difference over the fitted couples of bones; `null` when no couple was seen on both sides); `null` for SMPL parameters, whose betas are taken as stored |
 | `skeleton_pooling` | absent, or the spread across per-trial skeletons that were pooled |
 | `reduced_model` | the freeze: `frozen_joints` (the four names), `constants` (`[4, 3]` axis-angle), `absorbed_by` (which kept joint took each frozen joint's turn), `frozen_joint_provenance`, and `fit` |
 | `reduced_model.fit` | what the freeze cost and how it was chosen: `residual_rms_m` and `residual_max_m` over the affected joints, the same two for the mean-rotation `starting_guess`, `per_joint_rms_m`, `frames_used`, `solver`, `converged` |

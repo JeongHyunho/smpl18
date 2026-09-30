@@ -80,6 +80,20 @@ versioning starts at 0.1.0, when a corpus can be produced end to end.
   computed here and refuses to save when it differs.
 - `smpl18 demo-models --with-mesh` and `smpl18.model.demo.demo_boxes`: the stand-in body can carry
   a blocky surface, so a scene can be built and rendered without a licensed model.
+- A left/right symmetric rest skeleton (`smpl18.skeleton.symmetry`). SMPL's template and shape
+  directions are not mirror images, so fitted bodies came out with unequal legs. The settings key
+  `model.symmetry` chooses `skeleton` (the default: `J(β) = S(J0 + Dβ)` with
+  `S(J) = (J + Q M J) / 2`, left and right bones equal for every `β`), `template` (`S(J0) + Dβ`)
+  or `none` (SMPL's own, and the fit as it was). `Model` carries the mode (`Model.symmetry`,
+  `Model.with_symmetry`, default `skeleton`), so rest joints, the shape basis, conversion, corpus
+  reading, skinning and Blender plans all build the same skeleton; the surface is not mirrored.
+- The shape fit's left/right equality condition, `shape.lr_equality_weight` (default 100):
+  `w (l_L - l_R)` per couple of bones in the bone-length step and `w² |A(J0 + Dβ)|²` in the
+  refinement. It is zero on the `skeleton` basis and is refused with `none`.
+- `subject.json` records `model_symmetry`, and its `fit` block `model_symmetry`,
+  `lr_equality_weight` and `lr_max_difference_m`; a corpus reader rebuilds joints on the recorded
+  skeleton, taking a record without the key as `none`. A Blender plan records the mode it was
+  built on in `about.model_symmetry`, whether built for a trial or by hand.
 
 ### Changed
 - The README is organised by the data a user has, with the commands that work today; converting
@@ -90,6 +104,9 @@ versioning starts at 0.1.0, when a corpus can be produced end to end.
 - The dataset-name guard reads the ids of the shipped profiles and settings and matches whole
   words; marker sets and correspondence tables are named after protocols, not datasets.
 - Comments in the shipped configs describe the datasets, not particular conversion runs.
+- Rest joints are the mirror-symmetric skeleton by default, for a model built or loaded without a
+  mode as well as in a conversion; `model.symmetry: none` with `shape.lr_equality_weight: 0`
+  reproduces the earlier skeleton and fit bit for bit.
 
 ### Fixed
 - The up-axis change keeps the body in place: `t' = C (j_0 + t) − j_0` (primer section 3.4 had

@@ -181,13 +181,17 @@ plan.write("scene/S01_walk01.plan.npz")
 ```
 
 `build_plan` takes a pose directly, so a caller with its own 24-joint motion (say, straight from
-`smpl18 export-smpl`) need not go through a corpus at all. And `smpl18.mesh` skins a body without
-Blender in the picture:
+`smpl18 export-smpl`) need not go through a corpus at all. It builds the skeleton in the model's
+own left/right mode and records it in `about` as `model_symmetry`. `plan_for_trial` sets that mode
+from the subject record; a caller who skins a corpus subject directly sets it the same way, so the
+joints are the ones the betas were fitted on (a record from before the modes existed reads as
+`none`). And `smpl18.mesh` skins a body without Blender in the picture:
 
 ```python
 from smpl18.mesh import posed_vertices
 
-posed = posed_vertices(model, trial.subject.betas, trial.local_rotations_24(), trial.trans)
+body = model.with_symmetry(trial.subject.model_symmetry)   # the skeleton the subject was fitted on
+posed = posed_vertices(body, trial.subject.betas, trial.local_rotations_24(), trial.trans)
 posed.vertices      # (T, V, 3)
 posed.transforms    # (T, 24, 4, 4), the matrices a renderer's bones must carry
 ```

@@ -192,6 +192,11 @@ def build_plan(model: Model, *, betas, local: np.ndarray, trans: np.ndarray, fps
     ``correctives`` carries SMPL's pose blend shapes into the scene as shape keys; without them the
     surface is the shaped template skinned rigidly, and the plan records in ``about`` how far that
     is from the model's own answer, so a reader can judge whether it matters for the picture.
+
+    The rest joints follow ``model``'s left/right symmetry mode, which ``about`` records as
+    ``model_symmetry``. A caller rebuilding a corpus subject passes
+    ``model.with_symmetry(trial.subject.model_symmetry)``, as :func:`plan_for_trial` does, so the
+    skeleton is the one the betas were fitted on.
     """
     local = np.asarray(local, dtype=np.float64)
     trans = np.asarray(trans, dtype=np.float64)
@@ -215,6 +220,7 @@ def build_plan(model: Model, *, betas, local: np.ndarray, trans: np.ndarray, fps
         "frames": int(local.shape[0]),
         "fps": float(fps),
         "up_axis": up_axis,
+        "model_symmetry": model.symmetry,
         "vertices": int(surface.shape[0]),
         "correctives": "shape_keys" if correctives else "off",
         "pose_blend_shapes_mm": round(offsets_mm, 3),
@@ -245,9 +251,10 @@ def plan_for_trial(trial: CorpusTrial, model: Model, *, correctives: bool, sampl
     """Build a plan for one corpus trial, rebuilding its 24-joint pose first.
 
     ``frames`` takes a slice of the trial, which is how a long capture is kept to a scene one can
-    open. The subject's betas and frozen constants come from its record, so the body in Blender is
-    the body the conversion fitted.
+    open. The subject's betas, frozen constants and skeleton symmetry mode come from its record,
+    so the body in Blender is the body the conversion fitted.
     """
+    model = model.with_symmetry(trial.subject.model_symmetry)
     local = trial.local_rotations_24()
     trans = trial.trans
     chosen = frames or slice(None)

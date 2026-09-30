@@ -110,6 +110,9 @@ def sequence_from_trial(trial: CorpusTrial) -> SmplSequence:
         "hands": "identity: the corpus does not store them",
         "reduction_residual": record.get("fit"),
         "model_is_stand_in": subject.record.get("model_is_stand_in"),
+        # A plain SMPL reader builds SMPL's own skeleton from these betas; on a symmetric one
+        # (``template`` or ``skeleton``) the joints it gets differ from the corpus's.
+        "model_symmetry": subject.model_symmetry,
     }
     return SmplSequence(
         poses=trial.poses_24(),

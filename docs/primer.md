@@ -33,6 +33,12 @@ If only joints are needed, no mesh has to be built: `J(β)` and forward kinemati
 joint position and every segment rotation. The mesh matters only for attaching markers to surface
 vertices or for estimating body mass from volume.
 
+SMPL's template and shape directions are not left/right mirror images, so `J(β)` gives left and
+right bones of different lengths (the male template's legs differ by about 1 cm at `β = 0`). This
+package therefore uses the mirror-symmetric part `S(J(β))` by default (settings `model.symmetry:
+skeleton`); `none` keeps SMPL's own `J(β)`. The mesh itself is never mirrored
+(`smpl18.skeleton.symmetry`).
+
 **Gender models.** Male, female and neutral models are distributed separately. Their rest meshes
 and shape components differ, so **the same `β` gives a different skeleton on a different model.**
 The gender choice is part of the parameters and must be recorded.

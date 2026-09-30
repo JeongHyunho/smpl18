@@ -23,6 +23,9 @@ class TestRestJoints:
         np.testing.assert_allclose(rest, model.v_template, atol=1e-12)
 
     def test_betas_apply_the_shape_directions(self, model):
+        # SMPL's own formula; this model's shape direction is lopsided, which the default
+        # symmetric skeleton would average away (tests/skeleton/test_symmetry.py).
+        model = model.with_symmetry("none")
         rest = k.rest_joints(model, np.array([1.0, 0.0]))
         np.testing.assert_allclose(rest, model.v_template + model.shapedirs[:, :, 0], atol=1e-12)
 
@@ -34,6 +37,7 @@ class TestRestJoints:
         np.testing.assert_array_equal(short, k.rest_joints(model, np.array([0.5, 0.0])))
 
     def test_shaped_vertices_feed_the_regressor(self, model):
+        model = model.with_symmetry("none")          # SMPL's own formula, as above
         betas = np.array([0.3, 0.1])
         np.testing.assert_array_equal(k.rest_joints(model, betas), model.J_regressor @ k.shaped_vertices(model, betas))
 

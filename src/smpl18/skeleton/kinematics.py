@@ -16,6 +16,7 @@ import numpy as np
 
 from .definition import NUM_JOINTS, PARENTS, SEGMENTS
 from .rotations import axis_angle_to_matrix
+from .symmetry import antisymmetric_part, symmetric_part
 
 if TYPE_CHECKING:
     from smpl18.model.load import Model
@@ -43,8 +44,19 @@ def shaped_vertices(model: Model, betas) -> np.ndarray:
 
 
 def rest_joints(model: Model, betas) -> np.ndarray:
-    """Rest-pose joint centres ``J(betas) = J_regressor @ shaped_vertices``, shape ``(24, 3)``."""
-    return model.J_regressor @ shaped_vertices(model, betas)
+    """Rest-pose joint centres, shape ``(24, 3)``, on the model's left/right symmetry mode.
+
+    ``none`` is SMPL's own ``J(betas) = J_regressor @ shaped_vertices``; ``template`` mirrors the
+    template's share of it, ``S(J0) + D betas``, and ``skeleton`` the whole, ``S(J0 + D betas)``
+    (:mod:`smpl18.skeleton.symmetry`). The surface is not mirrored, so in those two modes the
+    joints are not quite where the regressor reads them off :func:`shaped_vertices`.
+    """
+    joints = model.J_regressor @ shaped_vertices(model, betas)
+    if model.symmetry == "skeleton":
+        return symmetric_part(joints)
+    if model.symmetry == "template":
+        return joints - antisymmetric_part(model.J_regressor @ model.v_template)
+    return joints
 
 
 def segment_lengths(rest: np.ndarray, segments=SEGMENTS) -> np.ndarray:

@@ -1,4 +1,5 @@
-"""The SMPL-24 skeleton: definition, rotation algebra, forward kinematics, frame changes."""
+"""The SMPL-24 skeleton: definition, rotation algebra, forward kinematics, frame changes,
+left/right symmetry."""
 
 from .definition import (
     BODY_JOINT_NAMES,
@@ -25,20 +26,33 @@ from .kinematics import (
     segment_lengths,
     shaped_vertices,
 )
+from .symmetry import (
+    DEFAULT_SYMMETRY,
+    MIRROR_PARTNER,
+    SYMMETRY_MODES,
+    antisymmetric_part,
+    mirror,
+    mirror_pairs,
+    symmetric_part,
+)
 
 __all__ = [
     "BODY_JOINTS",
     "BODY_JOINT_NAMES",
     "CHILDREN",
+    "DEFAULT_SYMMETRY",
     "HAND_JOINTS",
     "JOINT_NAMES",
+    "MIRROR_PARTNER",
     "NUM_JOINTS",
     "PARENTS",
     "PARENTS_ARRAY",
     "ROOT",
     "SEGMENTS",
     "SEGMENT_NAMES",
+    "SYMMETRY_MODES",
     "FrameChange",
+    "antisymmetric_part",
     "children_of",
     "fk",
     "fk_batch",
@@ -46,9 +60,12 @@ __all__ = [
     "global_rotations",
     "index_of",
     "local_rotations",
+    "mirror",
+    "mirror_pairs",
     "rest_joints",
     "segment_lengths",
     "shaped_vertices",
+    "symmetric_part",
     "transform_for_gravity",
     "up_axis_rotation",
 ]

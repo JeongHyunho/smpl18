@@ -152,6 +152,34 @@ def test_joint_centres_from_a_trc(tmp_path, body, walk, settings) -> None:
     assert np.median(error) < 0.005 and error.max() < 0.02
 
 
+def test_the_record_names_the_skeleton_and_the_side_difference(tmp_path, body, walk,
+                                                               settings) -> None:
+    model, rest = body
+    local, trans, _ = walk
+    labels, centres = synthetic.joint_centres(rest, local, trans)
+    path = trc.write(tmp_path / "jc.trc", labels, centres, rate_hz=100.0, units="m")
+    table = Correspondence.load(CONFIGS / "correspondence" / "joint_centre_labels.yaml")
+    trial = convert.centre_trial(path, correspondence=table, up_axis="y", settings=settings)
+    subject = SubjectInfo("S5", "neutral")
+    fit = convert_and_write(tmp_path, model.with_symmetry("none"), [trial], settings, subject)
+    assert fit.model_symmetry == "skeleton"               # the settings decide, not the model
+    stored = read_corpus(tmp_path / "corpus").subject("S5")
+    assert stored.model_symmetry == "skeleton"
+    block = stored.record["fit"]
+    assert block["model_symmetry"] == "skeleton" and block["lr_equality_weight"] == 100.0
+    assert block["lr_max_difference_m"] < 1e-9
+    assert stored.trials()[0].manifest["settings"]["model"] == {"symmetry": "skeleton"}
+    other = {**settings, "model": {"symmetry": "none"},
+             "shape": {**settings["shape"], "lr_equality_weight": 0.0}}
+    with pytest.raises(convert.ConversionError, match="made on the 'skeleton' skeleton"):
+        convert.write_subject_corpus(tmp_path / "other", subject=subject, model=model,
+                                     trials=[trial], fit=fit, settings=other, settings_files=[])
+    # SMPL's own skeleton with the equality condition on is refused before anything is read.
+    with pytest.raises(ValueError, match="must be 0 with model.symmetry none"):
+        convert.validate_settings({**settings, "model": {"symmetry": "none"}}, "joint_centres")
+    convert.validate_settings({**settings, "model": {"symmetry": "none"}}, "smpl_parameters")
+
+
 def test_smpl_parameters(tmp_path, body, walk, settings) -> None:
     model, rest = body
     local, trans, _ = walk

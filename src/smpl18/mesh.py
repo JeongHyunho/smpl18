@@ -153,6 +153,12 @@ def posed_vertices(model: Model, betas, local: np.ndarray, trans: np.ndarray, *,
     ``with_pose_offsets`` false the pose blend shapes are left out, which is what a renderer that
     cannot carry 207 shape keys has to do; the difference is a few millimetres around bent joints
     and is what :func:`smpl18.blender.plan.build_plan` reports.
+
+    The joints follow the model's left/right symmetry mode and the surface does not: SMPL's surface
+    is not its own mirror image, so on a symmetric skeleton it turns about joints that are not
+    where the regressor reads them off it -- millimetres near zero shape, centimetres at large
+    betas (:mod:`smpl18.skeleton.symmetry`). For a corpus subject pass
+    ``model.with_symmetry(trial.subject.model_symmetry)``, the skeleton its betas were fitted on.
     """
     _with_mesh(model)
     local = np.asarray(local, dtype=np.float64)

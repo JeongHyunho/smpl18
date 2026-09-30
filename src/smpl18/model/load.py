@@ -4,16 +4,21 @@ A clean npz holds ``v_template``, ``shapedirs``, ``J_regressor`` and ``kintree_p
 optionally the mesh trio ``weights``, ``posedirs``, ``faces`` (``docs/primer.md`` section 2.4).
 Nothing is unpickled: ``np.load`` runs with ``allow_pickle=False``. Arrays are float64 (indices
 int64) and read-only, so a model shared between callers cannot be edited under them.
+
+A model also carries the left/right symmetry mode its rest skeleton is built with
+(:mod:`smpl18.skeleton.symmetry`); every function that makes rest joints from it follows that mode.
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from smpl18.skeleton.definition import NUM_JOINTS, PARENTS
+from smpl18.skeleton.symmetry import DEFAULT_SYMMETRY, check_symmetry
 
 from .select import MODEL_FILENAMES, file_sha256, model_path_for_gender
 
@@ -39,7 +44,9 @@ class Model:
 
     ``gender``, ``path`` and ``sha256`` are ``None`` for a model built in memory rather than
     loaded from a file. ``stand_in`` is true for the demonstration body of
-    :mod:`smpl18.model.demo`, which only borrows the SMPL-24 tree.
+    :mod:`smpl18.model.demo`, which only borrows the SMPL-24 tree. ``symmetry`` is the left/right
+    mode of the rest skeleton (``none``, ``template`` or ``skeleton``); a model built or loaded
+    without one is ``skeleton``, and a conversion sets it from its settings.
     """
 
     v_template: np.ndarray
@@ -53,6 +60,7 @@ class Model:
     path: Path | None = None
     sha256: str | None = None
     stand_in: bool = False
+    symmetry: str = DEFAULT_SYMMETRY
 
     def __post_init__(self) -> None:
         set_ = object.__setattr__
@@ -63,7 +71,16 @@ class Model:
         for key, dtype in (("weights", np.float64), ("posedirs", np.float64), ("faces", np.int64)):
             if getattr(self, key) is not None:
                 set_(self, key, _read_only(getattr(self, key), dtype))
+        check_symmetry(self.symmetry)
         self._validate()
+
+    def with_symmetry(self, symmetry: str) -> Model:
+        """This model with another left/right symmetry mode; the read-only arrays are shared."""
+        if check_symmetry(symmetry) == self.symmetry:
+            return self
+        other = copy.copy(self)
+        object.__setattr__(other, "symmetry", symmetry)
+        return other
 
     def _validate(self) -> None:
         vertices = self.v_template.shape[0]
@@ -98,9 +115,10 @@ class Model:
         return self.weights is not None and self.posedirs is not None and self.faces is not None
 
     @classmethod
-    def for_gender(cls, gender: str, root: str | Path | None = None) -> Model:
+    def for_gender(cls, gender: str, root: str | Path | None = None, *,
+                   symmetry: str = DEFAULT_SYMMETRY) -> Model:
         """Load the model :func:`smpl18.model.select.model_path_for_gender` names."""
-        return load(model_path_for_gender(gender, root), gender=gender)
+        return load(model_path_for_gender(gender, root), gender=gender, symmetry=symmetry)
 
 
 def _gender_from_name(path: Path) -> str | None:
@@ -110,10 +128,12 @@ def _gender_from_name(path: Path) -> str | None:
     return None
 
 
-def load(path: str | Path, *, gender: str | None = None) -> Model:
+def load(path: str | Path, *, gender: str | None = None,
+         symmetry: str = DEFAULT_SYMMETRY) -> Model:
     """Read a clean npz into a :class:`Model`, hashing the file and checking keys and shapes.
 
-    ``gender`` defaults to what the file name says when it is one of the set's names.
+    ``gender`` defaults to what the file name says when it is one of the set's names;
+    ``symmetry`` is the rest skeleton's left/right mode (:mod:`smpl18.skeleton.symmetry`).
     """
     path = Path(path)
     with np.load(path, allow_pickle=False) as data:
@@ -134,4 +154,5 @@ def load(path: str | Path, *, gender: str | None = None) -> Model:
         path=path,
         sha256=file_sha256(path),
         stand_in=stand_in,
+        symmetry=symmetry,
     )

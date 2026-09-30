@@ -101,3 +101,17 @@ def test_in_memory_models_copy_their_inputs(tiny):
     source[0, 0] = 99.0
     assert model.v_template[0, 0] != 99.0
     assert model.gender is None and model.path is None and model.sha256 is None
+
+
+def test_a_model_carries_its_skeleton_symmetry_mode(tmp_path, tiny):
+    path = tmp_path / "SMPL_MALE_clean.npz"
+    np.savez(path, **tiny)
+    assert Model(**tiny).symmetry == "skeleton" and load(path).symmetry == "skeleton"
+    model = load(path, symmetry="template")
+    assert model.symmetry == "template"
+    other = model.with_symmetry("none")
+    assert other.symmetry == "none" and model.symmetry == "template"
+    assert other.shapedirs is model.shapedirs and other.sha256 == model.sha256
+    assert model.with_symmetry("template") is model
+    with pytest.raises(ValueError, match="symmetry"):
+        Model(**tiny, symmetry="mirrored")

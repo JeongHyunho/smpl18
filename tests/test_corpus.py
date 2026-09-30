@@ -11,9 +11,11 @@ from smpl18.corpus import (
     write_summary,
     write_trial,
 )
+from smpl18.model.demo import demo_model
+from smpl18.model.load import Model
 from smpl18.reduce import apply, to_18
 from smpl18.skeleton.definition import FROZEN_JOINT_NAMES, JOINT18_NAMES
-from smpl18.skeleton.kinematics import fk_batch
+from smpl18.skeleton.kinematics import fk_batch, rest_joints
 from smpl18.skeleton.rotations import axis_angle_to_matrix, matrix_to_axis_angle
 
 
@@ -115,6 +117,28 @@ def test_writing_checks_shapes(tmp_path) -> None:
         write_trial(tmp_path, "t", poses=np.zeros((2, 18, 3)), trans=np.zeros((3, 3)), fps=1,
                     up_axis="y", joint_provenance=["measured"] * 18,
                     frame_valid=np.ones(2, bool), manifest={})
+
+
+def test_the_body_is_built_on_the_skeleton_the_record_names(corpus) -> None:
+    root, *_ = corpus
+    plain = demo_model()
+    lopsided = Model(                                  # symmetry: the default, skeleton
+        v_template=plain.v_template + np.random.default_rng(3).normal(0.0, 0.006, (24, 3)),
+        shapedirs=plain.shapedirs, J_regressor=plain.J_regressor,
+        kintree_parents=plain.kintree_parents,
+    )
+    trial = read_corpus(root).subject("S1").trial("walk")
+    assert trial.subject.model_symmetry == "none"      # a record from before the modes existed
+    rest = rest_joints(lopsided.with_symmetry("none"), trial.subject.betas)
+    expected = fk_batch(rest, trial.local_rotations_24(), trial.trans)[0]
+    np.testing.assert_array_equal(trial.joints_world(lopsided), expected)
+
+    data = json.loads((root / "S1" / "subject.json").read_text(encoding="utf-8"))
+    write_subject(root / "S1", {**data, "model_symmetry": "skeleton"})
+    trial = read_corpus(root).subject("S1").trial("walk")
+    expected = fk_batch(rest_joints(lopsided, trial.subject.betas), trial.local_rotations_24(),
+                        trial.trans)[0]
+    np.testing.assert_array_equal(trial.joints_world(lopsided.with_symmetry("none")), expected)
 
 
 def test_a_trial_the_record_does_not_list_is_refused(corpus) -> None:

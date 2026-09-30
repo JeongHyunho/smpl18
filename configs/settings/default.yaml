@@ -11,6 +11,14 @@ output:
   # The world frame the corpus is written in. SMPL's own rest frame is Y-up.
   up_axis: y
 
+model:
+  # Left/right symmetry of the rest skeleton. SMPL's template and shape directions are not
+  # mirror-symmetric (the male template's legs differ by about 1 cm at zero shape), so a fitted
+  # body can carry unequal legs its subject does not have. skeleton mirrors template and shape
+  # directions (left and right bones equal for every beta); template mirrors the template only;
+  # none keeps SMPL's own skeleton. The surface is never mirrored.
+  symmetry: skeleton
+
 shape:
   # Betas fitted; the model's remaining ones stay zero.
   betas: 10
@@ -25,6 +33,12 @@ shape:
   # Pose-then-betas rounds after the bone-length step. Each round lets the trunk and every
   # other chain the targets span inform the shape; two or three settle it.
   refinements: 2
+  # Weight w of the left/right equality condition: w (l_L - l_R) per left/right couple of bones
+  # in the bone-length step, w^2 |antisymmetric part of the joints|^2 in the refinement. At 100 a
+  # 1 mm difference costs as much as 10 cm of RMS error in the bone-length step. Zero leaves the
+  # condition out; on the skeleton-symmetric model it is zero whatever the weight. It must be zero
+  # with model.symmetry none, where no beta can remove the template's own asymmetry.
+  lr_equality_weight: 100.0
 
 pose:
   # Levenberg-Marquardt per frame. A frame stops when no parameter moves more than the

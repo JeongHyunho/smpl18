@@ -241,8 +241,12 @@ class CorpusTrial:
         return matrix_to_axis_angle(self.local_rotations_24())
 
     def joints_world(self, model) -> np.ndarray:
-        """``(T, 24, 3)`` world joint centres with the subject's betas on ``model``."""
-        rest = rest_joints(model, self.subject.betas)
+        """``(T, 24, 3)`` world joint centres with the subject's betas on ``model``.
+
+        The rest skeleton is the one the subject was fitted on
+        (:attr:`CorpusSubject.model_symmetry`), whatever symmetry mode ``model`` carries.
+        """
+        rest = rest_joints(model.with_symmetry(self.subject.model_symmetry), self.subject.betas)
         positions, _ = fk_batch(rest, self.local_rotations_24(), self.trans)
         return positions
 
@@ -260,6 +264,12 @@ class CorpusSubject:
     @property
     def betas(self) -> np.ndarray:
         return np.asarray(self.record["betas"], dtype=np.float64)
+
+    @property
+    def model_symmetry(self) -> str:
+        """The rest skeleton's left/right mode the subject was fitted on. A record written before
+        the mode existed was fitted on SMPL's own skeleton, ``none``."""
+        return str(self.record.get("model_symmetry", "none"))
 
     @property
     def constants(self) -> np.ndarray:
